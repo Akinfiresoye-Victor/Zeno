@@ -1,0 +1,21 @@
+{
+  "approved_roots": [
+    "C:\\Users\\User\\Documents\\ZenoWorkspace",
+    "C:\\Users\\User\\Desktop\\zeno-ai-assistant"
+  ],
+  "command_allowlist": [
+    "git",
+    "python",
+    "pip",
+    "pytest",
+    "ruff",
+    "mypy",
+    "pip-audit",
+    "bandit"
+  ],
+  "default_timeout_seconds": 60,
+  "max_concurrent_jobs": 2,
+  "max_steps_per_task": 25,
+  "max_task_minutes": 45,
+  "output_truncation_chars": 8000
+}

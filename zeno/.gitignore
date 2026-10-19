@@ -1,0 +1,7 @@
+.env
+permissions.json
+actions.log
+screenshots/
+__pycache__/
+*.py[cod]
+.venv/

@@ -1,0 +1,6 @@
+{
+  "name": "Zeno Desktop AI Assistant",
+  "description": "Native desktop AI assistant built in Python and CustomTkinter with system tools, screen capture, file operations, multi-provider auto-switching, and interactive desktop studio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

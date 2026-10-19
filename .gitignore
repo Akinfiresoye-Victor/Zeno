@@ -1,0 +1,101 @@
+# =============================================================================
+# Zeno AI Assistant - Git Ignore Rules
+# =============================================================================
+
+# --- Environment Secrets & API Keys ---
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+zeno/.env
+zeno/.env.local
+
+# --- User Data & Private State ---
+chats.json
+memory.md
+permissions.json
+actions.log
+safety.db
+safety.db-journal
+safety.db-wal
+zeno/chats.json
+zeno/memory.md
+zeno/permissions.json
+zeno/actions.log
+zeno/safety.db
+zeno/safety.db-journal
+zeno/safety.db-wal
+
+# --- Runtime Media & Captures ---
+screenshots/
+zeno/screenshots/
+*.png.tmp
+*.jpg.tmp
+
+# --- Python Bytecode & Cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.pyo
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Python Virtual Environments ---
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# --- Testing & Code Quality ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / Frontend Build ---
+node_modules/
+dist/
+dist-electron/
+.playwright-cli/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Desktop Packaging & PyInstaller ---
+build/
+*.manifest
+*.spec.bak
+
+# --- Generated Reports & Scratch ---
+reports/
+*.report.md
+
+# --- IDEs & Editor Metadata ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.aistudio/
+.kombai/
+
+# --- Operating System Files ---
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+.LSOverride

@@ -1,0 +1,393 @@
+{
+  "iterations": 50,
+  "timestamp": "2026-10-21 10:48:21",
+  "metrics_summary": {
+    "total_duration": {
+      "mean": 3.1008911219999935,
+      "stdev": 0.573103258620629,
+      "min": 2.2880049999998846,
+      "max": 4.556115699999282,
+      "p50": 3.0497972000000573,
+      "p95": 4.1317115749999624,
+      "p99": 4.4187911909996815
+    },
+    "cpu_duration": {
+      "mean": 0.34816890199996126,
+      "stdev": 0.10187046349259106,
+      "min": 0.23620029999983672,
+      "max": 0.7907611999999062,
+      "p50": 0.3341648499999792,
+      "p95": 0.5144484049997118,
+      "p99": 0.6619075169998536
+    },
+    "memory_duration": {
+      "mean": 2.752704492000012,
+      "stdev": 0.5329252966145048,
+      "min": 2.049946099999943,
+      "max": 4.109167300000081,
+      "p50": 2.678900750000139,
+      "p95": 3.7906301150004307,
+      "p99": 3.990787366999934
+    },
+    "peak_memory_bytes": {
+      "mean": 43022319.6,
+      "min": 43022154,
+      "max": 43023458,
+      "p50": 43022274.0,
+      "p95": 43022338.0,
+      "p99": 43022909.2
+    }
+  },
+  "raw_runs": [
+    {
+      "total_duration": 2.470778800000062,
+      "cpu_duration": 0.2517347000002701,
+      "memory_duration": 2.219026599999779,
+      "tracemalloc_current_bytes": 10836038,
+      "tracemalloc_peak_bytes": 43023458
+    },
+    {
+      "total_duration": 2.8109135999998216,
+      "cpu_duration": 0.3532571000000644,
+      "memory_duration": 2.457615700000133,
+      "tracemalloc_current_bytes": 10835886,
+      "tracemalloc_peak_bytes": 43022154
+    },
+    {
+      "total_duration": 2.3606736000001547,
+      "cpu_duration": 0.2546125000003485,
+      "memory_duration": 2.1060449999999946,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.465767899999719,
+      "cpu_duration": 0.41045549999989817,
+      "memory_duration": 2.0552920999998605,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.3762428,
+      "cpu_duration": 0.2651624999998603,
+      "memory_duration": 2.1110655000002225,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.2880049999998846,
+      "cpu_duration": 0.2380392000000029,
+      "memory_duration": 2.049946099999943,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.6669671999998172,
+      "cpu_duration": 0.2598409000001993,
+      "memory_duration": 2.407110599999669,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.5344850999999835,
+      "cpu_duration": 0.35199229999989257,
+      "memory_duration": 2.1824768999999833,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.3669856999999865,
+      "cpu_duration": 0.2477296000001843,
+      "memory_duration": 2.119241200000033,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.4218323000000055,
+      "cpu_duration": 0.25651190000007773,
+      "memory_duration": 2.1653047999998307,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.443140500000027,
+      "cpu_duration": 0.24450530000012805,
+      "memory_duration": 2.1986190000002352,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.476892599999701,
+      "cpu_duration": 0.28745459999981904,
+      "memory_duration": 3.189420499999869,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.5648307999999815,
+      "cpu_duration": 0.2642759999998816,
+      "memory_duration": 2.3005395000000135,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.555847900000117,
+      "cpu_duration": 0.2727428999996846,
+      "memory_duration": 2.2830904000002192,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.400590700000066,
+      "cpu_duration": 0.23620029999983672,
+      "memory_duration": 2.164375100000143,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.0502990999998474,
+      "cpu_duration": 0.3215583000001061,
+      "memory_duration": 2.7287249999999403,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.6907946000001175,
+      "cpu_duration": 0.36265929999990476,
+      "memory_duration": 3.3281143000003794,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.4190330000001268,
+      "cpu_duration": 0.5277944999997999,
+      "memory_duration": 2.891223600000103,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.91371319999962,
+      "cpu_duration": 0.3415371999999479,
+      "memory_duration": 2.572163499999988,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.0452133000003414,
+      "cpu_duration": 0.3161156999999548,
+      "memory_duration": 2.729084199999761,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.1077860999998848,
+      "cpu_duration": 0.36384410000027856,
+      "memory_duration": 2.743924699999752,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.616365500000029,
+      "cpu_duration": 0.39589319999959116,
+      "memory_duration": 3.220459099999971,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.3789096000000427,
+      "cpu_duration": 0.4306283999999323,
+      "memory_duration": 2.9482622000000447,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.767935100000159,
+      "cpu_duration": 0.2479785999998967,
+      "memory_duration": 2.5199376000000484,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 4.199590700000044,
+      "cpu_duration": 0.33199839999997494,
+      "memory_duration": 3.867575599999782,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.1414012000000184,
+      "cpu_duration": 0.31978269999990516,
+      "memory_duration": 2.821597699999984,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.3647406000000046,
+      "cpu_duration": 0.24749990000009348,
+      "memory_duration": 2.1172262000000046,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.813108700000157,
+      "cpu_duration": 0.2622065000000475,
+      "memory_duration": 2.5508872000000338,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 2.441402200000084,
+      "cpu_duration": 0.2610174999999799,
+      "memory_duration": 2.180370099999891,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.668536899999708,
+      "cpu_duration": 0.27060019999998985,
+      "memory_duration": 3.3979198000001816,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.174068199999965,
+      "cpu_duration": 0.2922286000002714,
+      "memory_duration": 2.8818242999996073,
+      "tracemalloc_current_bytes": 10836006,
+      "tracemalloc_peak_bytes": 43022274
+    },
+    {
+      "total_duration": 3.7311400999997204,
+      "cpu_duration": 0.48285110000051645,
+      "memory_duration": 3.2482759999993505,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 4.556115699999282,
+      "cpu_duration": 0.44693329999972775,
+      "memory_duration": 4.109167300000081,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.3806916000003184,
+      "cpu_duration": 0.5187329000000318,
+      "memory_duration": 2.8619102000002385,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.3679203000001507,
+      "cpu_duration": 0.7907611999999062,
+      "memory_duration": 2.577143100000285,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 4.048748199999864,
+      "cpu_duration": 0.33633129999998346,
+      "memory_duration": 3.712401800000407,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 2.836207600000307,
+      "cpu_duration": 0.3426958999998533,
+      "memory_duration": 2.4934949999997116,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.4418038000003435,
+      "cpu_duration": 0.325864399999773,
+      "memory_duration": 3.115922199999659,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.185200199999599,
+      "cpu_duration": 0.3695410999998785,
+      "memory_duration": 2.8156361999999717,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.603687400000126,
+      "cpu_duration": 0.3270223999998052,
+      "memory_duration": 3.2766436000001704,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 2.9905376999995497,
+      "cpu_duration": 0.3614451999992525,
+      "memory_duration": 2.6290765000003375,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.5495958000001337,
+      "cpu_duration": 0.41318390000014915,
+      "memory_duration": 3.136395200000152,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 4.002527499999815,
+      "cpu_duration": 0.36183509999955277,
+      "memory_duration": 3.640675900000133,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.049295300000267,
+      "cpu_duration": 0.4898095000007743,
+      "memory_duration": 2.559468899999956,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 4.275861600000098,
+      "cpu_duration": 0.4212110999997094,
+      "memory_duration": 3.8546351000004506,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.3637251999998625,
+      "cpu_duration": 0.3269368999999642,
+      "memory_duration": 3.0367710000000443,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.035574700000325,
+      "cpu_duration": 0.5092117999993206,
+      "memory_duration": 2.5263435999995636,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.6000703999998223,
+      "cpu_duration": 0.36765310000009777,
+      "memory_duration": 3.2323984000004202,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 2.9100882000002457,
+      "cpu_duration": 0.3435701999997036,
+      "memory_duration": 2.5665000999997574,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    },
+    {
+      "total_duration": 3.1189123000003747,
+      "cpu_duration": 0.384996300000239,
+      "memory_duration": 2.7339004000004934,
+      "tracemalloc_current_bytes": 10836070,
+      "tracemalloc_peak_bytes": 43022338
+    }
+  ]
+}

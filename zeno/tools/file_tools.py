@@ -19,42 +19,61 @@ from zeno.settings import (
     MAX_FILE_READ_CHARS,
 )
 
+_active_project_dir: Optional[Path] = None
 
-def validate_and_resolve_path(raw_path: str | Path) -> Path:
+
+def set_active_project_dir(path: Optional[Path | str] = None) -> None:
+    """Set the active project directory for current agent task containment (Rule B)."""
+    global _active_project_dir
+    _active_project_dir = Path(path).resolve() if path else None
+
+
+def get_active_project_dir() -> Optional[Path]:
+    """Retrieve the active project directory."""
+    return _active_project_dir
+
+
+def validate_and_resolve_path(raw_path: str | Path, is_write: bool = False) -> Path:
     """
-    Safely resolve a path and verify it is strictly inside one of the ALLOWED_FOLDERS.
-    Symlinks and parent-directory traversals ('..') are fully resolved and evaluated.
-
-    Args:
-        raw_path: User-provided relative or absolute path string.
-
-    Returns:
-        Path: Canonical resolved filesystem path.
-
-    Raises:
-        PermissionError: If the target path lies outside allowed directories.
+    Safely resolve a path and verify containment.
+    Rule B: When an active project dir is set, relative paths resolve inside the project dir,
+    and all write operations must strictly reside inside the project dir.
     """
     path_str = str(raw_path).strip()
     p = Path(path_str).expanduser()
 
-    # If relative path, check if it starts with one of the allowed folder names
+    # Rule B: If active project dir is set, resolve relative paths inside it
     if not p.is_absolute():
-        parts = p.parts
-        if parts and parts[0] in ALLOWED_FOLDER_NAMES:
-            p = HOME_DIR / p
+        if _active_project_dir:
+            p = _active_project_dir / p
         else:
-            # Default relative paths into Documents folder
-            p = HOME_DIR / "Documents" / p
+            parts = p.parts
+            if parts and parts[0] in ALLOWED_FOLDER_NAMES:
+                p = HOME_DIR / p
+            else:
+                p = HOME_DIR / "Documents" / p
 
     resolved = p.resolve()
 
-    # Check if resolved path is inside any of the allowed directories
+    # If writing and active project dir is set, strictly enforce project containment
+    if is_write and _active_project_dir:
+        if resolved != _active_project_dir and _active_project_dir not in resolved.parents:
+            raise PermissionError(
+                f"Rule B Violation: Cannot write outside active project folder '{_active_project_dir}'. Attempted write to '{resolved}'."
+            )
+        return resolved
+
+    # Check against allowed workspace folders
     is_allowed = False
     for allowed_dir in ALLOWED_FOLDERS:
         resolved_allowed = allowed_dir.resolve()
         if resolved == resolved_allowed or resolved_allowed in resolved.parents:
             is_allowed = True
             break
+
+    if not is_allowed and _active_project_dir:
+        if resolved == _active_project_dir or _active_project_dir in resolved.parents:
+            is_allowed = True
 
     if not is_allowed:
         allowed_list_str = ", ".join(ALLOWED_FOLDER_NAMES)
@@ -88,6 +107,7 @@ def list_directory(path: str = "Documents") -> list[dict]:
             items.append(
                 {
                     "name": entry.name,
+                    "path": str(entry.resolve()),
                     "type": "directory" if entry.is_dir() else "file",
                     "size_bytes": stat.st_size if entry.is_file() else None,
                 }
@@ -147,7 +167,7 @@ def write_file(
     Returns:
         str: Confirmation message with saved path and written byte count.
     """
-    target = validate_and_resolve_path(path)
+    target = validate_and_resolve_path(path, is_write=True)
 
     # Check confirmation rule if overwriting existing file
     confirmed, msg = check_and_confirm_file_overwrite(str(target), _active_confirm_callback)
@@ -175,7 +195,7 @@ def append_file(
     Returns:
         str: Confirmation message.
     """
-    target = validate_and_resolve_path(path)
+    target = validate_and_resolve_path(path, is_write=True)
 
     target.parent.mkdir(parents=True, exist_ok=True)
     with open(target, "a", encoding="utf-8") as f:

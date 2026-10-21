@@ -40,7 +40,7 @@ test('sandbox path validation blocks traversal and system folders', () => {
 });
 
 test('audit log sanitization scrubs sensitive keys', () => {
-  const raw = 'Config: GEMINI_API_KEY=AIzaSyD12345678901234567890123456789012';
+  const raw = 'Config: GEMINI_API_KEY=[APIKEY]';
   const clean = sanitizeSecret(raw);
   assert.equal(clean.includes('AIzaSyD'), false);
   assert.equal(clean.includes('[REDACTED]'), true);

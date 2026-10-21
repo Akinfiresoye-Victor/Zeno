@@ -44,20 +44,14 @@ from zeno.settings import (
     MAX_HISTORY_MESSAGES,
     MAX_OUTPUT_TOKENS,
     MAX_STEPS,
+    ORCHID_SYSTEM_PROMPT,
     SUPPORTED_MODELS,
 )
 from zeno.tools import ALL_TOOLS, TOOL_CATEGORIES, TOOL_REGISTRY
 from zeno.memory import format_memory_for_prompt
 
-# Exact required system prompt
-SYSTEM_PROMPT = (
-    "You are Zeno, a personal assistant and Python coding helper running on the "
-    "user's laptop. Give correct, concise answers. Explain key ideas in plain English "
-    "and define any technical term you use. Put code in fenced code blocks with the "
-    "language name. Use the tools when they help, and never claim you did something "
-    "without the tool result showing it. Ask before taking actions the user did not "
-    "request. Do not use emojis."
-)
+# Use the authoritative Orchid system prompt from settings
+SYSTEM_PROMPT = ORCHID_SYSTEM_PROMPT
 
 load_dotenv(dotenv_path=ENV_FILE_PATH)
 
@@ -254,14 +248,24 @@ class ZenoAgent:
             if is_agentic_mode:
                 sys_inst = (
                     f"{SYSTEM_PROMPT}{memory_block}\n\n"
-                    "CRITICAL: You are Zeno Builder, the autonomous Agent Worker executing tasks under the vigilant supervision of Zeno Observer (the AI safety guard). "
+                    "CRITICAL AGENTIC MODE — You are Zeno Bud, the autonomous Agent Worker executing "
+                    "tasks under the vigilant supervision of Zeno Orchid (the AI safety guard). "
                     "You MUST actively complete the user's task by invoking tools. "
-                    "When asked to create, build, or write code, applications, or files, you MUST invoke tools such as write_file to save the actual code and files to disk, "
-                    "create_project_workspace to create directories, and run_python if needed. Do NOT merely provide code in text or claim you did it without tool executions. "
-                    "You have access to the development tools suite (shell_run, git_status, git_diff, git_commit, run_tests, lint_run, security_scan, server_start, server_stop, server_logs, watch_start, watch_stop, schedule_task, sandbox_run, pip_install, job_submit, job_status, job_cancel, report_write). "
-                    "Every action you take is audited by Zeno Observer to prevent destructive operations. If Zeno Observer vetoes an action, adjust your strategy immediately. "
-                    "When you take a screenshot, visually inspect the screen to verify what was loaded and confirm whether the task succeeded. "
-                    "Execute all necessary tool calls to build the project on the system now."
+                    "When asked to create, build, or write code, applications, or files, you MUST "
+                    "invoke tools such as write_file to save actual files to disk, "
+                    "create_project_workspace to create directories, and run_python if needed. "
+                    "Do NOT merely provide code in text or claim you did it without tool executions. "
+                    "You have access to: shell_run, git_status, git_diff, git_commit, run_tests, "
+                    "lint_run, security_scan, server_start, server_stop, server_logs, watch_start, "
+                    "watch_stop, schedule_task, sandbox_run, pip_install, job_submit, job_status, "
+                    "job_cancel, report_write, download_file, open_in_explorer, read_file_as_base64. "
+                    "Every action you take is audited by Zeno Orchid. If Zeno Orchid vetoes an action, "
+                    "adjust your strategy immediately and try an alternative approach. "
+                    "When you take a screenshot, read it carefully and describe what you see. "
+                    "For EPHEMERAL tasks (alarm, arrange files, etc.): write temporary code, run it, "
+                    "verify success, then delete the temporary file — do NOT present the code as output. "
+                    "All files must be saved inside the current session workspace only. "
+                    "Execute all necessary tool calls now."
                 )
 
             config = types.GenerateContentConfig(
@@ -408,23 +412,23 @@ class ZenoAgent:
                 self.on_tool_used(line)
             return result, summary
 
-        # 2. Zeno Observer AI Safety Guard Real-Time Audit
+        # 2. Zeno Orchid AI Safety Guard Real-Time Audit
         try:
             from zeno.safety.observer import audit_action_with_observer
-            is_allowed, veto_reason = audit_action_with_observer(
+            verdict, veto_reason = audit_action_with_observer(
                 action_type=tool_name,
                 action_payload=tool_args,
                 context=original_user_prompt,
             )
-            if not is_allowed:
-                result = f"Blocked by Zeno Observer: {veto_reason}"
-                summary = f"Observer Veto: {veto_reason}"
+            if verdict == "BLOCK":
+                result = f"Blocked by Zeno Orchid: {veto_reason}"
+                summary = f"Orchid Veto: {veto_reason}"
                 log_tool_action(tool_name, tool_args, summary)
                 if self.on_tool_used:
-                    self.on_tool_used(f"Zeno Observer Veto: {veto_reason}")
+                    self.on_tool_used(f"Zeno Orchid Veto: {veto_reason}")
                 return result, summary
         except Exception as obs_exc:
-            logging.warning("Observer audit exception: %s", obs_exc)
+            logging.warning("Orchid audit exception: %s", obs_exc)
 
         # 3. Multi-threaded Safety Verification for Python Code
         if tool_name == "run_python":

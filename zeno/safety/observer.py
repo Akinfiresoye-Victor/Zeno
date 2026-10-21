@@ -1,9 +1,9 @@
 """
-Zeno Observer: Adversarial AI Safety Guard & Task Planning Engine.
-Performs continuous in-band scrutiny of all actions proposed by Zeno Builder,
-intercepts and blocks destructive or sketchy operations (e.g. software deletion,
-system folder tampering), generates structured multi-step plans for complex tasks,
-and maintains an active safety dialogue with Zeno Builder.
+Zeno Orchid: Adversarial AI Safety Guard & Task Planning Engine.
+Performs continuous in-band scrutiny of all actions proposed by Zeno Bud,
+intercepts and blocks destructive or sketchy operations, generates structured
+dynamic-length step plans scaled to task complexity, and maintains an active
+safety dialogue with Zeno Bud.
 """
 
 from __future__ import annotations
@@ -37,53 +37,72 @@ DANGEROUS_PATTERNS = [
     r"\bnet\s+(user|localgroup)",
 ]
 
+# Task complexity grading so Orchid cannot take the easy way out.
+# The AI is required to generate enough steps to properly address the task.
+COMPLEXITY_GRADE_PROMPT = """
+STEP COUNT GRADING REQUIREMENTS (Zeno Orchid must comply):
+  Grade F (Trivial) - 2 to 4 steps: Single-command tasks, simple Q&A with no files (e.g. "what is the time").
+  Grade D (Simple) - 4 to 7 steps: Single-file scripts, basic automations, simple lookups (e.g. "write me a hello world script").
+  Grade C (Moderate) - 7 to 12 steps: Multi-file projects, web scraping, data processing (e.g. "build a CSV parser").
+  Grade B (Complex) - 12 to 18 steps: Full applications, multi-module systems, APIs (e.g. "build a REST API with tests").
+  Grade A (Advanced) - 18 to 25 steps: Full-stack apps, ML pipelines, multi-service systems.
+  Grade S (Expert) - 25+ steps: Large-scale systems, platform tools, comprehensive research + code.
+
+YOU MUST correctly grade the task and generate AT LEAST the minimum number of steps
+for that grade. NEVER compress a Grade B task into 4 steps to take shortcuts.
+"""
+
 
 def plan_task_with_observer(
     task_description: str,
     model: str = "gemini-3.5-flash-lite",
+    api_key: str = "",
     custom_api_key: str = "",
 ) -> dict[str, Any]:
     """
-    Zeno Observer decomposes complex user requests into granular (5 to 12)
-    step blueprints with embedded safety boundaries before Zeno Builder begins.
+    Zeno Orchid decomposes complex user requests into granular, dynamically-sized
+    step blueprints with embedded safety boundaries before Zeno Bud begins.
+    Step count scales with task complexity — no artificial cap or minimum.
     """
     load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
-    target_key = custom_api_key.strip() if custom_api_key else os.getenv("GEMINI_API_KEY", "").strip()
+    # Support both `api_key` and legacy `custom_api_key` param name
+    target_key = (api_key or custom_api_key or "").strip()
+    if not target_key:
+        target_key = os.getenv("GEMINI_API_KEY", "").strip()
 
-    title = task_description.strip()[:40]
+    title = task_description.strip()[:60]
 
-    # Deterministic default multi-step plan for complex workflows
-    default_steps = [
-        f"Zeno Observer: Audit environment constraints and project roots for '{title}'",
-        "Zeno Observer: Verify git worktree isolation on branch agent/<job-id>",
-        "Zeno Builder: Establish project scaffold and dependency manifests",
-        "Zeno Builder: Implement core application logic and architectural modules",
-        "Zeno Observer: Perform intermediate code safety and lint verification",
-        "Zeno Builder: Write unit tests and boundary test suites",
-        "Zeno Builder: Execute test runner (run_tests) and verify zero failures",
-        "Zeno Observer: Conduct security audit scan (pip-audit & bandit)",
-        "Zeno Builder: Synthesize execution report in reports/ directory",
-        "Zeno Observer: Validate completed worktree artifacts and prepare merge summary",
-    ]
+    # Sensible dynamic fallback plan (not fixed at 10 anymore)
+    default_steps = _build_default_plan(task_description)
 
     if not target_key or target_key == "your_key_here":
         record_observer_dialogue(
-            speaker="Zeno Observer",
-            message=f"Formulated a 10-step safety blueprint for: {title}",
+            speaker="Zeno Orchid",
+            message=f"Formulated a {len(default_steps)}-step safety blueprint for: {title}",
             action_proposed="plan_task",
             guard_verdict="APPROVED_PLAN",
         )
-        return {"title": title, "steps": default_steps, "planner": "Zeno Observer"}
+        return {"title": title, "steps": default_steps, "planner": "Zeno Orchid"}
 
     prompt = (
-        "You are Zeno Observer, a senior software architect and AI safety sentinel. "
-        "Your role is to decompose the user's task into an exhaustive, highly detailed step-by-step execution roadmap for Zeno Builder (the worker agent).\n"
+        "You are Zeno Orchid, a senior AI safety sentinel and software architect. "
+        "Your role is to generate a precise, exhaustive execution roadmap for Zeno Bud "
+        "(the worker agent) to follow step by step.\n\n"
         f"User Goal: {task_description}\n\n"
+        f"{COMPLEXITY_GRADE_PROMPT}\n"
         "CRITICAL REQUIREMENTS:\n"
-        "1. DO NOT return vague, generic, or broad steps. Break the task down into 8 to 14 granular, concrete, sequential engineering milestones.\n"
-        "2. Every step must have a clear, specific directive (e.g. 1: Scaffold directory structure and manifest files; 2: Create data structures and type definitions; 3: Implement core business logic module; 4: Implement utility and validation helpers; 5: Build CLI command parser and error handlers; 6: Author comprehensive unit test suite; 7: Author edge-case and boundary test suite; 8: Execute test runner (run_tests) and inspect assertions; 9: Run lint and AST safety audits (lint_run); 10: Compile README and usage documentation; 11: Generate final executive markdown audit report (report_write)).\n"
-        "3. Name the exact files to be created and tools to be invoked for each milestone.\n"
-        "4. Output strictly a numbered list (e.g. '1. ...', '2. ...') with one step per line. Do NOT include markdown code blocks, backticks, or conversational preamble."
+        "1. First, determine the complexity grade of this task based on the grading above.\n"
+        "2. Generate AT LEAST the minimum number of steps for that grade — do NOT cut corners.\n"
+        "3. Every step must be a concrete, specific, actionable directive. "
+        "Name the exact files to create, tools to invoke, and validation checks to run.\n"
+        "4. Include Zeno Orchid verification steps (safety checks, test execution, "
+        "output validation) at appropriate milestones.\n"
+        "5. For tasks involving web or external data, include dedicated research/fetch steps.\n"
+        "6. For code tasks, always include a testing and verification step.\n"
+        "7. End with a step where Zeno Orchid validates the final output and prepares "
+        "the completion summary for the user.\n"
+        "8. Output ONLY a numbered list (1. ..., 2. ...), one step per line. "
+        "No markdown code blocks, no preamble, no explanations outside the list."
     )
 
     try:
@@ -94,14 +113,14 @@ def plan_task_with_observer(
         resp = client.models.generate_content(
             model=model,
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=2048, temperature=0.2),
+            config=types.GenerateContentConfig(max_output_tokens=3000, temperature=0.2),
         )
         text = resp.text or ""
         lines = [re.sub(r"^\d+[\.\)]\s*", "", line).strip() for line in text.splitlines() if line.strip()]
-        steps = [l for l in lines if len(l) > 4]
-        if len(steps) >= 4:
+        steps = [ln for ln in lines if len(ln) > 5]
+        if len(steps) >= 2:
             record_observer_dialogue(
-                speaker="Zeno Observer",
+                speaker="Zeno Orchid",
                 message=f"Formulated a {len(steps)}-step autonomous plan with safety guardrails.",
                 action_proposed="plan_task",
                 guard_verdict="APPROVED_PLAN",
@@ -109,8 +128,11 @@ def plan_task_with_observer(
             return {
                 "title": title,
                 "steps": steps,
-                "planner": "Zeno Observer",
-                "safety_summary": f"Zeno Observer audited and approved a {len(steps)}-step milestone plan with workspace containment.",
+                "planner": "Zeno Orchid",
+                "safety_summary": (
+                    f"Zeno Orchid audited and approved a {len(steps)}-step milestone plan "
+                    f"with workspace containment."
+                ),
             }
     except Exception:
         pass
@@ -118,9 +140,79 @@ def plan_task_with_observer(
     return {
         "title": title,
         "steps": default_steps,
-        "planner": "Zeno Observer",
-        "safety_summary": f"Zeno Observer configured a {len(default_steps)}-step milestone plan with isolated worktree bounds.",
+        "planner": "Zeno Orchid",
+        "safety_summary": (
+            f"Zeno Orchid configured a {len(default_steps)}-step milestone plan "
+            f"with isolated workspace bounds."
+        ),
     }
+
+
+def _build_default_plan(task_description: str) -> list[str]:
+    """
+    Build a sensible dynamic default plan whose length scales with the apparent
+    complexity of the task description. This replaces the old fixed 10-step fallback.
+    """
+    lower = task_description.lower()
+    title = task_description.strip()[:40]
+
+    # Heuristics to gauge complexity
+    is_trivial = any(w in lower for w in [
+        "what is", "what time", "hello", "tell me", "who is", "define",
+    ])
+    is_simple = any(w in lower for w in [
+        "write a script", "hello world", "simple function", "basic", "small",
+    ])
+    is_complex = any(w in lower for w in [
+        "application", "full stack", "api", "database", "microservice",
+        "authentication", "dashboard", "machine learning", "ml", "pipeline",
+        "multi", "system", "platform", "framework",
+    ])
+
+    if is_trivial:
+        return [
+            f"Zeno Orchid: Analyse intent and context for '{title}'",
+            "Zeno Bud: Retrieve or compute the requested information",
+            "Zeno Orchid: Validate accuracy and format the response",
+        ]
+    elif is_simple:
+        return [
+            f"Zeno Orchid: Audit environment and workspace for '{title}'",
+            "Zeno Bud: Establish session workspace directory",
+            "Zeno Bud: Write the core implementation file",
+            "Zeno Bud: Execute and verify output is correct",
+            "Zeno Orchid: Validate result and prepare user summary",
+        ]
+    elif is_complex:
+        return [
+            f"Zeno Orchid: Audit environment constraints and project scope for '{title}'",
+            "Zeno Orchid: Verify workspace isolation and session directory",
+            "Zeno Bud: Establish project scaffold, directory structure, and manifests",
+            "Zeno Bud: Define core data schemas, type contracts, and interfaces",
+            "Zeno Bud: Implement primary domain engine and core business logic",
+            "Zeno Bud: Implement auxiliary utilities, validators, and input handlers",
+            "Zeno Bud: Build API layer, CLI parser, or user-facing interface",
+            "Zeno Bud: Implement data persistence, storage, or external integrations",
+            "Zeno Orchid: Intermediate code safety and lint verification",
+            "Zeno Bud: Author comprehensive unit test suite",
+            "Zeno Bud: Author edge-case and boundary test fixtures",
+            "Zeno Bud: Execute test runner and verify zero failures",
+            "Zeno Orchid: Security audit and dependency check",
+            "Zeno Bud: Write README and usage documentation",
+            "Zeno Orchid: Validate completed artefacts and prepare final summary",
+        ]
+    else:
+        # Moderate default
+        return [
+            f"Zeno Orchid: Audit environment and scope for '{title}'",
+            "Zeno Orchid: Verify workspace isolation",
+            "Zeno Bud: Establish session workspace and project scaffold",
+            "Zeno Bud: Implement core application logic and modules",
+            "Zeno Orchid: Intermediate safety and lint check",
+            "Zeno Bud: Write automated test suite",
+            "Zeno Bud: Execute tests and verify all pass",
+            "Zeno Orchid: Validate outputs and prepare user summary",
+        ]
 
 
 def audit_action_with_observer(
@@ -131,7 +223,7 @@ def audit_action_with_observer(
     **kwargs: Any,
 ) -> tuple[str, str]:
     """
-    Zeno Observer scrutinizes an action proposed by Zeno Builder before execution.
+    Zeno Orchid scrutinises an action proposed by Zeno Bud before execution.
     Returns: (verdict, explanation)
     verdict is one of:
       - 'ALLOW': Safe, benign action.
@@ -153,9 +245,9 @@ def audit_action_with_observer(
         if val and isinstance(val, str):
             is_valid, resolved, err = validate_approved_path(val)
             if not is_valid:
-                reason = f"Zeno Observer VETO: Path '{val}' escapes approved workspace bounds. ({err})"
+                reason = f"Zeno Orchid VETO: Path '{val}' escapes approved workspace bounds. ({err})"
                 record_observer_dialogue(
-                    speaker="Zeno Observer",
+                    speaker="Zeno Orchid",
                     message=reason,
                     job_id=job_id,
                     action_proposed=f"{tool_name}({args_repr})",
@@ -163,48 +255,82 @@ def audit_action_with_observer(
                 )
                 return "BLOCK", reason
 
-    # 2. Command Safety Check for shell_run
-    if tool_name == "shell_run":
-        cmd = tool_args.get("command") or tool_args.get("cmd") or ""
-        valid_cmd, cmd_args, err = parse_and_validate_command(cmd)
-        if not valid_cmd:
-            reason = f"Zeno Observer VETO: Command '{cmd}' is not allowlisted or contains shell metacharacters. ({err})"
+    # Use Layered Orchid Security Kernel for command evaluation
+    from zeno.safety.rules import OrchidSecurityKernel
+
+    if tool_name in ["shell_run", "run_python", "sandbox_run"]:
+        cmd_str = tool_args.get("command") or tool_args.get("cmd") or tool_args.get("code") or ""
+        eval_result = OrchidSecurityKernel.evaluate_command(str(cmd_str), project_dir=project_path)
+        verdict = eval_result.verdict
+        rule_name = eval_result.rule_name
+        reason = f"[{rule_name}] {eval_result.reason}"
+
+        if verdict == "DENY":
+            deny_reason = f"Zeno Orchid VETO: {reason}"
             record_observer_dialogue(
-                speaker="Zeno Observer",
+                speaker="Zeno Orchid",
+                message=deny_reason,
+                job_id=job_id,
+                action_proposed=f"{tool_name}: {cmd_str[:80]}",
+                guard_verdict="BLOCK",
+            )
+            return "BLOCK", deny_reason
+        elif verdict == "ASK_USER":
+            record_observer_dialogue(
+                speaker="Zeno Orchid",
                 message=reason,
                 job_id=job_id,
-                action_proposed=f"shell_run: {cmd}",
+                action_proposed=f"{tool_name}: {cmd_str[:80]}",
+                guard_verdict="ESCALATE",
+            )
+            return "ESCALATE", reason
+        else:
+            record_observer_dialogue(
+                speaker="Zeno Orchid",
+                message=f"Verified safe action: [{rule_name}] {eval_result.reason}",
+                job_id=job_id,
+                action_proposed=f"{tool_name}: {cmd_str[:80]}",
+                guard_verdict="ALLOW",
+            )
+            return "ALLOW", eval_result.reason
+
+    # File write operations
+    if tool_name in ["write_file", "append_file", "create_document", "download_file"]:
+        target_f = tool_args.get("path") or tool_args.get("destination_path") or tool_args.get("file_path") or ""
+        eval_result = OrchidSecurityKernel.evaluate_file_write(str(target_f), project_dir=project_path)
+        verdict = eval_result.verdict
+        rule_name = eval_result.rule_name
+        reason = f"[{rule_name}] {eval_result.reason}"
+
+        if verdict == "DENY":
+            record_observer_dialogue(
+                speaker="Zeno Orchid",
+                message=reason,
+                job_id=job_id,
+                action_proposed=f"{tool_name}: {target_f}",
                 guard_verdict="BLOCK",
             )
             return "BLOCK", reason
-
-        # Check for dangerous destructive patterns
-        cmd_str = " ".join(cmd_args) if isinstance(cmd_args, list) else str(cmd)
-        for pattern in DANGEROUS_PATTERNS:
-            if re.search(pattern, cmd_str, re.IGNORECASE):
-                reason = (
-                    f"Zeno Observer VETO: Detected destructive signature in command '{cmd_str}'. "
-                    f"Deleting software or system configurations is strictly forbidden."
-                )
-                record_observer_dialogue(
-                    speaker="Zeno Observer",
-                    message=reason,
-                    job_id=job_id,
-                    action_proposed=f"shell_run: {cmd_str}",
-                    guard_verdict="BLOCK",
-                )
-                return "BLOCK", reason
+        else:
+            record_observer_dialogue(
+                speaker="Zeno Orchid",
+                message=f"Verified safe write: [{rule_name}] {eval_result.reason}",
+                job_id=job_id,
+                action_proposed=f"{tool_name}: {target_f}",
+                guard_verdict="ALLOW",
+            )
+            return "ALLOW", eval_result.reason
 
     # 3. Git Branch Safety Check
     if tool_name == "git_commit":
         branch = tool_args.get("branch", "")
         if any(b in branch.lower() for b in ["main", "master", "prod"]):
             reason = (
-                f"Zeno Observer VETO: Zeno Builder attempted to commit directly to protected branch '{branch}'. "
-                f"Autonomous background tasks must only commit to 'agent/<job-id>' branches."
+                f"[rule_deny_protected_branch] Zeno Orchid VETO: Attempted to commit directly to protected "
+                f"branch '{branch}'. Autonomous tasks must commit to feature branches."
             )
             record_observer_dialogue(
-                speaker="Zeno Observer",
+                speaker="Zeno Orchid",
                 message=reason,
                 job_id=job_id,
                 action_proposed=f"git_commit on {branch}",
@@ -215,29 +341,32 @@ def audit_action_with_observer(
     # 4. Pip Package Installation Policy
     if tool_name == "pip_install":
         pkg = tool_args.get("package", "")
-        # Require human review if installing packages
-        reason = f"Zeno Observer: Package install '{pkg}' requires human confirmation before venv injection."
+        reason = (
+            f"[rule_allow_pip_package] Zeno Orchid: Package install '{pkg}' inside project environment approved."
+        )
         record_observer_dialogue(
-            speaker="Zeno Observer",
+            speaker="Zeno Orchid",
             message=reason,
             job_id=job_id,
             action_proposed=f"pip_install({pkg})",
-            guard_verdict="ESCALATE",
+            guard_verdict="ALLOW",
         )
-        return "ESCALATE", reason
+        return "ALLOW", reason
 
-    # Safe and verified action
+    # Safe and verified general action
+    reason = f"[rule_general_allow] Safe action approved for {tool_name} with verified arguments."
     record_observer_dialogue(
-        speaker="Zeno Observer",
-        message=f"Verified safe action: {tool_name}",
+        speaker="Zeno Orchid",
+        message=reason,
         job_id=job_id,
-        action_proposed=f"{tool_name}({args_repr})",
+        action_proposed=f"{tool_name}({args_repr[:80]})",
         guard_verdict="ALLOW",
     )
-    return "ALLOW", "Action verified safe by Zeno Observer."
+    return "ALLOW", reason
 
 
 def get_recent_dialogues(limit: int = 15) -> list[dict[str, Any]]:
     """Retrieve recent safety dialogues from database."""
     from zeno.safety.database import get_recent_observer_dialogues
     return get_recent_observer_dialogues(limit=limit)
+

@@ -201,9 +201,8 @@ app.post('/api/run-python', (req: Request, res: Response) => {
   }
 
   const tempFile = path.join(os.tmpdir(), `zeno_test_${Date.now()}.py`);
-  fs.writeFileSync(tempFile, code, 'utf-8');
-
-  exec(`python3 "${tempFile}"`, { timeout: 30000 }, (error, stdout, stderr) => {
+  const pyCmd = process.platform === 'win32' ? 'python' : 'python3';
+  exec(`${pyCmd} "${tempFile}"`, { timeout: 30000 }, (error, stdout, stderr) => {
     try {
       if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
     } catch (_) {}

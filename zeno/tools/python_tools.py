@@ -38,8 +38,25 @@ def run_python(code: str) -> dict:
             temp_file = f.name
             f.write(code)
 
+        from zeno.tools.file_tools import get_active_project_dir
+
+        active_dir = get_active_project_dir()
+        py_exe = sys.executable
+
+        # Rule E: Use venv python if present inside project folder
+        if active_dir:
+            venv_bin_win = active_dir / ".venv" / "Scripts" / "python.exe"
+            venv_bin_posix = active_dir / ".venv" / "bin" / "python"
+            if venv_bin_win.exists():
+                py_exe = str(venv_bin_win)
+            elif venv_bin_posix.exists():
+                py_exe = str(venv_bin_posix)
+
+        exec_cwd = str(active_dir) if active_dir else None
+
         proc = subprocess.run(
-            [sys.executable, temp_file],
+            [py_exe, temp_file],
+            cwd=exec_cwd,
             capture_output=True,
             text=True,
             timeout=PYTHON_EXEC_TIMEOUT_SECONDS,

@@ -90,3 +90,73 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
         })
 
     return results[:max_results]
+
+
+def fetch_webpage_content(url_or_domain: str, max_chars: int = 4000) -> dict[str, Any]:
+    """
+    Fetch and extract clean readable text, title, and description from a website or URL.
+    Handles raw domains like 'estatewebng.com' or full URLs like 'https://example.com/page'.
+    """
+    import html
+    import re
+    from typing import Any
+
+    clean_target = url_or_domain.strip().strip("'\"<>")
+    if not clean_target:
+        return {"ok": False, "error": "Empty URL provided."}
+
+    if not clean_target.startswith(("http://", "https://")):
+        target_url = "https://" + clean_target
+    else:
+        target_url = clean_target
+
+    try:
+        req = urllib.request.Request(
+            target_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            raw_bytes = resp.read(250000)
+            charset = resp.headers.get_content_charset() or "utf-8"
+            html_text = raw_bytes.decode(charset, errors="replace")
+
+        # Extract title
+        title_m = re.search(r"<title[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL)
+        title = html.unescape(title_m.group(1).strip()) if title_m else clean_target
+
+        # Extract meta description
+        desc_m = re.search(r'<meta[^>]+name=[\'"]description[\'"][^>]+content=[\'"]([^\'"]+)[\'"]', html_text, re.IGNORECASE)
+        if not desc_m:
+            desc_m = re.search(r'<meta[^>]+content=[\'"]([^\'"]+)[\'"][^>]+name=[\'"]description[\'"]', html_text, re.IGNORECASE)
+        description = html.unescape(desc_m.group(1).strip()) if desc_m else ""
+
+        # Remove scripts, styles, svg, and markup
+        text = re.sub(r"<(script|style|svg|noscript|header|footer|nav)[^>]*>.*?</\1>", " ", html_text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = html.unescape(text)
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        body_text = "\n".join(lines)
+        if len(body_text) > max_chars:
+            body_text = body_text[:max_chars] + "\n... [content truncated]"
+
+        return {
+            "ok": True,
+            "url": target_url,
+            "title": title,
+            "description": description,
+            "content": body_text,
+        }
+    except Exception as exc:
+        search_res = web_search(clean_target, max_results=3)
+        snippets = "\n".join(f"- {r.get('title')}: {r.get('snippet')}" for r in search_res)
+        return {
+            "ok": False,
+            "url": target_url,
+            "error": str(exc),
+            "fallback_search": snippets,
+        }
+

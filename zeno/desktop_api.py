@@ -13,6 +13,8 @@ import logging
 import os
 from pathlib import Path
 import re
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -66,8 +68,10 @@ from zeno.settings import (
     DEFAULT_WORKSPACE_DIR,
     ENV_FILE_PATH,
     HOME_DIR,
+    ORCHID_SYSTEM_PROMPT,
     PERMISSIONS_PATH,
     SCREENSHOTS_DIR,
+    SESSIONS_DIR,
 )
 from zeno.tools.app_tools import open_app, open_url
 from zeno.tools.clipboard_tools import read_clipboard, write_clipboard
@@ -85,6 +89,27 @@ from zeno.tools.screen_tools import capture_screen, list_screen_targets
 from zeno.tools.system_tools import system_info
 from zeno.tools.web_tools import web_search
 from zeno.tools.workspace_tools import create_project_workspace, organize_documents
+from zeno.tools.download_tools import (
+    download_file as _download_file,
+    open_in_explorer as _open_in_explorer,
+    read_file_as_base64 as _read_file_as_base64,
+)
+
+# New Zeno Architecture Engine Modules
+from zeno.engine.checklist import ChecklistEngine, StepStatus
+from zeno.engine.errors import ErrorClassifier, RetryHandler, save_step_draft
+from zeno.engine.jobs import JobSupervisor
+from zeno.engine.storage import StorageManager
+from zeno.engine.workspace import (
+    ProjectWorkspace,
+    generate_creative_folder_name,
+    sanitize_folder_name,
+)
+from zeno.safety.rules import OrchidSecurityKernel
+from zeno.tools.file_tools import get_active_project_dir, set_active_project_dir
+
+
+from zeno.engine.api_handlers import ZenoEngineHandlers
 
 
 class ZenoDesktopApi:
@@ -94,6 +119,10 @@ class ZenoDesktopApi:
     conversational AI dispatch to the web UI.
     """
 
+    # Global abort flag so the frontend can stop the agent loop between steps
+    _agent_abort: bool = False
+    _agent_abort_lock: threading.Lock = threading.Lock()
+
     def __init__(self) -> None:
         load_dotenv(dotenv_path=ENV_FILE_PATH)
         try:
@@ -102,10 +131,130 @@ class ZenoDesktopApi:
         except Exception as exc:
             logging.error("Failed to initialize safety DB / recovery: %s", exc)
 
+        # Initialize Architecture Engines (Rule A, Rule C, Rule E)
+        self.storage = StorageManager()
+        self.job_supervisor = JobSupervisor.get_instance()
+        self.engine_handlers = ZenoEngineHandlers(self.storage, self.job_supervisor)
+
+    # -------------------------------------------------------------------------
+    # Rule A: Assistant Threads & Cross-Area Read-Only Run Inspector
+    # -------------------------------------------------------------------------
+    def get_assistant_threads(self, payload: Any = None, *args, **kwargs) -> list[dict[str, Any]]:
+        """Return conversational Assistant chat threads (independent of agent runs)."""
+        return self.engine_handlers.get_assistant_threads()
+
+    def create_assistant_thread(self, payload: Optional[dict[str, Any]] = None, *args, **kwargs) -> dict[str, Any]:
+        """Create a new conversational Assistant thread."""
+        return self.engine_handlers.create_assistant_thread(payload)
+
+    def delete_assistant_thread(self, payload: dict[str, Any], *args, **kwargs) -> dict[str, Any]:
+        """Delete an Assistant thread."""
+        return self.engine_handlers.delete_assistant_thread(payload)
+
+    def inspect_agent_run(self, payload: dict[str, Any], *args, **kwargs) -> dict[str, Any]:
+        """Rule A: Allow Assistant to inspect agent run state, checklist, files, and logs read-only."""
+        return self.engine_handlers.inspect_agent_run(payload)
+
+    # -------------------------------------------------------------------------
+    # Rule B & C: Agent Workspace Runs, Creative Folders & Checklist Engine
+    # -------------------------------------------------------------------------
+    def get_agent_runs(self, payload: Any = None, *args, **kwargs) -> list[dict[str, Any]]:
+        """Return all agent runs in history and queue."""
+        return self.engine_handlers.get_agent_runs()
+
+    def _get_client(self, *args: Any, **kwargs: Any) -> Any:
+        """Helper for client instantiation if requested."""
+        return None
+
+    def create_agent_run(self, payload: dict[str, Any], *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """
+        Rule B: Create project folder with creative 2-4 word name,
+        initialize .venv, generate checklist.json (Rule C), and enqueue run.
+        """
+        return self.engine_handlers.create_agent_run(payload, self._get_client)
+
+    def rename_project_folder(self, payload: dict[str, Any], *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Rule B: Rename project folder on disk and update run records."""
+        return self.engine_handlers.rename_project_folder(payload)
+
+    def get_run_checklist(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Rule C: Return checklist.json as single source of truth."""
+        return self.engine_handlers.get_run_checklist(payload)
+
+    def execute_agent_step(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """
+        Rule C, D, E: Execute a step with Python verification gating,
+        transient network backoff (SSL EOF), health checks, and screenshots.
+        """
+        return self.engine_handlers.execute_agent_step(payload, self._execute_agent_for_step)
+
+    def revisit_agent_step(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Rule C: Jump back to earlier step, re-verifying dependent steps only."""
+        return self.engine_handlers.jump_back_step(payload)
+
+    def abort_agent_run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Rule E: Stop every job started by the run, killing child process tree."""
+        return self.engine_handlers.abort_agent_run(payload)
+
+    def list_project_files(self, payload: Any = None, *args, **kwargs) -> list[dict[str, Any]]:
+        """Rule G: Return real project directory tree."""
+        return self.engine_handlers.list_project_files(payload or {})
+
+    def _execute_agent_for_step(
+        self,
+        prompt: str,
+        model: str,
+        custom_key: str,
+        history: list[dict[str, Any]],
+        on_tool: Any,
+    ) -> dict[str, Any]:
+        agent = ZenoAgent(
+            on_tool_used=on_tool,
+            on_status_change=lambda status, in_t, out_t: None,
+        )
+        agent.active_model = model
+        agent.auto_approve_safe = True
+        agent.auto_switch_enabled = False
+
+        for h in history[-8:]:
+            role = h.get("role", "user")
+            content = h.get("content", "")
+            if content:
+                agent.history.append({"role": "user" if role == "user" else "assistant", "content": content})
+
+        reply, in_tokens, out_tokens = agent._execute_agent_loop(
+            model_name=model,
+            recent_history=agent.history[-10:],
+            user_message=prompt,
+            is_agentic_mode=True,
+        )
+        return {
+            "reply": reply,
+            "inputTokens": in_tokens,
+            "outputTokens": out_tokens,
+        }
+
+    def abort_agent_task(self) -> dict[str, Any]:
+        """Signal the running agent loop to stop after the current step completes."""
+        with ZenoDesktopApi._agent_abort_lock:
+            ZenoDesktopApi._agent_abort = True
+        logging.info("Agent abort signal set by user.")
+        return {"ok": True, "message": "Abort signal sent. Agent will stop after current step."}
+
+    def _check_abort(self) -> bool:
+        """Return True if the user has requested abort."""
+        with ZenoDesktopApi._agent_abort_lock:
+            return ZenoDesktopApi._agent_abort
+
+    def _clear_abort(self) -> None:
+        """Clear the abort flag at the start of a new task."""
+        with ZenoDesktopApi._agent_abort_lock:
+            ZenoDesktopApi._agent_abort = False
+
     # -------------------------------------------------------------------------
     # System and Diagnostics Tools
     # -------------------------------------------------------------------------
-    def get_system_status(self) -> dict[str, Any]:
+    def get_system_status(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
         """Return real-time hardware telemetry and operating system specs."""
         try:
             return system_info()
@@ -545,8 +694,41 @@ class ZenoDesktopApi:
         custom_api_key = payload.get("customApiKey", "")
         mode = payload.get("mode", "chat")
         attachments = payload.get("attachments", [])
-
         load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
+
+        # Automatic live web search & website inspection enrichment
+        url_matches = re.findall(
+            r'(?:https?://)?([a-zA-Z0-9-]+\.(?:com|org|net|edu|gov|io|ng|co|ai|app|dev|xyz|info)(?:/[^\s]*)?)',
+            message,
+            re.IGNORECASE,
+        )
+        if url_matches:
+            target_site = url_matches[0]
+            try:
+                from zeno.tools.web_tools import fetch_webpage_content
+                web_res = fetch_webpage_content(target_site)
+                if web_res.get("ok"):
+                    message += (
+                        f"\n\n[Live Web Inspection for {web_res.get('url')}]:\n"
+                        f"Page Title: {web_res.get('title')}\n"
+                        f"Meta Description: {web_res.get('description')}\n"
+                        f"Page Content:\n{web_res.get('content')}\n"
+                        f"[End of Live Web Inspection. Use the verified information above to provide a complete, informative answer.]\n"
+                    )
+                elif web_res.get("fallback_search"):
+                    message += f"\n\n[Web Search Results for {target_site}]:\n{web_res.get('fallback_search')}\n"
+            except Exception as e:
+                logger.warning("Automatic webpage inspection failed: %s", e)
+        elif any(k in message.lower() for k in ["search the web", "search online", "latest info on", "duckduckgo", "google search"]):
+            try:
+                from zeno.tools.web_tools import web_search
+                clean_q = re.sub(r"(?i)^(search the web for|search online for|search for|google|browse)\s*", "", message).strip()
+                s_results = web_search(clean_q or message, max_results=4)
+                if s_results:
+                    snippets = "\n".join(f"- {r.get('title')} ({r.get('url')}): {r.get('snippet')}" for r in s_results)
+                    message += f"\n\n[Live Web Search Grounding for '{clean_q}']:\n{snippets}\n"
+            except Exception as e:
+                logger.warning("Automatic web search failed: %s", e)
 
         # 1. Non-Gemini models routing (Claude, OpenRouter, OpenAI, Groq)
         if "claude" in requested_model.lower():
@@ -584,8 +766,8 @@ class ZenoDesktopApi:
         is_agentic = mode == "agentic"
         memory_block = format_memory_for_prompt()
         system_instruction = (
-            f"{SYSTEM_PROMPT}{memory_block}"
-            f"{' You are in Agentic Worker mode: break down tasks into numbered action steps and execute them.' if is_agentic else ' If asked for a complex multi-step agentic task on the system or files, present a clear step-by-step plan that can be delegated to the agentic worker.'}"
+            f"{ORCHID_SYSTEM_PROMPT}{memory_block}"
+            f"{' You are in Agentic Worker mode. Break down tasks into numbered action steps and execute them using available tools. You are supervised by Zeno Orchid.' if is_agentic else ' If asked for a complex multi-step agentic task on the system or files, present a clear step-by-step plan that can be delegated to the agentic worker.'}"
         )
 
         # Order of Gemini models to try: user's selected model first!
@@ -704,16 +886,28 @@ class ZenoDesktopApi:
 
             contents.append(types.Content(role="user", parts=user_parts))
 
-            config = types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                max_output_tokens=2048,
-            )
-
-            response = client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config,
-            )
+            # Try with Google Search grounding tool, falling back to standard config if model/key rejects it
+            try:
+                config = types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    max_output_tokens=2048,
+                    tools=[types.Tool(google_search=types.GoogleSearch())],
+                )
+                response = client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config,
+                )
+            except Exception:
+                config = types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    max_output_tokens=2048,
+                )
+                response = client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config,
+                )
 
             reply_text = ""
             if getattr(response, "text", None):
@@ -721,12 +915,26 @@ class ZenoDesktopApi:
             elif hasattr(response, "candidates") and response.candidates:
                 candidate = response.candidates[0]
                 if candidate.content and candidate.content.parts:
-                    reply_text = "".join(
-                        getattr(p, "text", "") for p in candidate.content.parts if getattr(p, "text", None)
-                    )
+                    extracted: list[str] = []
+                    for p in candidate.content.parts:
+                        t = getattr(p, "text", None)
+                        if t:
+                            extracted.append(t)
+                        elif hasattr(p, "thought") and p.thought:
+                            extracted.append(p.thought)
+                    reply_text = "".join(extracted)
+
+            if not reply_text and hasattr(response, "candidates") and response.candidates:
+                # Check for grounding metadata or citations
+                gm = getattr(response.candidates[0], "grounding_metadata", None)
+                if gm and getattr(gm, "grounding_chunks", None):
+                    chunks = [c.web.title for c in gm.grounding_chunks if hasattr(c, "web") and getattr(c.web, "title", None)]
+                    if chunks:
+                        reply_text = f"Found relevant search sources: {', '.join(chunks)}"
 
             if not reply_text:
-                reply_text = "I have processed your request."
+                reply_text = "I received and analyzed your request. Please let me know how you would like me to assist you with this."
+
             usage = getattr(response, "usage_metadata", None)
             in_tokens = getattr(usage, "prompt_token_count", 38) or 38
             out_tokens = getattr(usage, "candidates_token_count", 88) or 88
@@ -1045,85 +1253,72 @@ class ZenoDesktopApi:
         ]
         return "\n".join(summary_parts)
 
-    # -------------------------------------------------------------------------
-    # Agentic Task Planner & Step-by-Step Runner
-    # -------------------------------------------------------------------------
     def create_agent_plan(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
-        Generate a detailed step-by-step execution plan for an agentic task.
-        Breaks down goals into 3 to 6 discrete actionable stages before execution.
+        Zeno Orchid generates a dynamic complexity-graded plan.
+        Always prepends Step 0: create project subfolder.
+        Returns sessionId, sessionWorkspace, and projectFolder.
         """
-        task = payload.get("task", "")
+        task = payload.get("task") or payload.get("message", "")
         model = payload.get("model", "gemini-3.5-flash-lite")
-        custom_api_key = payload.get("customApiKey", "")
+        custom_key = payload.get("customApiKey", "")
+        session_id = payload.get("sessionId", "")
 
         load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
-        target_key = (
-            custom_api_key.strip() if custom_api_key
-            else os.getenv("GEMINI_API_KEY", "").strip()
-        )
+        api_key = custom_key.strip() if custom_key else os.getenv("GEMINI_API_KEY", "").strip()
 
-        title = generate_chat_topic(task)
-        default_steps = [
-            f"Analyze requirements and dependencies for '{title}'",
-            "Initialize workspace directory and configure project structure",
-            "Write core application logic and implementation modules",
-            "Run automated verification tests and safety checks",
-            "Synthesize final results and verify completed files",
-        ]
+        # Create isolated session workspace
+        import uuid, re as _re
+        if not session_id:
+            session_id = f"session_{uuid.uuid4().hex[:8]}"
+        session_dir = SESSIONS_DIR / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
 
-        if not target_key or target_key == "your_key_here":
-            return {"title": title, "steps": default_steps}
+        # Derive project folder name from task (slugified)
+        slug = _re.sub(r"[^a-zA-Z0-9]+", "_", task[:32].strip().lower()).strip("_") or "project"
+        project_folder = session_dir / slug
+        project_folder.mkdir(parents=True, exist_ok=True)
 
-        prompt = (
-            "You are an expert autonomous software engineer and planning agent.\n"
-            f"Given the user's task, break it down into 3 to 6 concrete, sequential, actionable steps that an autonomous agent will execute using native tools (such as write_file, run_python, list_directory, create_document, etc.).\n"
-            f"Task: {task}\n\n"
-            "Format your response strictly as a numbered list with each step on a new line (e.g., '1. ...', '2. ...'). "
-            "Keep each step concise (under 12 words) and focused on a single actionable milestone. Do NOT include markdown code blocks or conversational chatter."
+        step0 = (
+            f"Zeno Bud: Create project folder '{slug}/' inside the session workspace "
+            f"({str(session_dir)}) and confirm it exists. ALL subsequent files for this "
+            f"task MUST be written inside {str(project_folder)} and nowhere else."
         )
 
         try:
-            from google import genai
-            from google.genai import types
-
-            client = genai.Client(api_key=target_key)
-            candidates = self.GEMINI_MODEL_CANDIDATES.get(model, [model])
-            response = None
-            for c_model in candidates:
-                try:
-                    response = client.models.generate_content(
-                        model=c_model,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(max_output_tokens=1024, temperature=0.2),
-                    )
-                    break
-                except Exception:
-                    continue
-
-            if response is None:
-                return {"title": title, "steps": default_steps}
-
-            text = response.text or ""
-            parsed_steps: list[str] = []
-            for line in text.splitlines():
-                clean = line.strip()
-                if re.match(r"^\d+[\.\)]\s+", clean):
-                    step_body = re.sub(r"^\d+[\.\)]\s+", "", clean).strip()
-                    if step_body:
-                        parsed_steps.append(step_body)
-
-            if len(parsed_steps) >= 2:
-                return {"title": title, "steps": parsed_steps}
-            return {"title": title, "steps": default_steps}
-        except Exception:
-            return {"title": title, "steps": default_steps}
+            plan = plan_task_with_observer(
+                task_description=task,
+                api_key=api_key,
+                model=model,
+            )
+            steps = plan.get("steps", [])
+            # Prepend the mandatory subfolder step
+            plan["steps"] = [step0] + steps
+            plan["sessionId"] = session_id
+            plan["sessionWorkspace"] = str(session_dir)
+            plan["projectFolder"] = str(project_folder)
+            return plan
+        except Exception as exc:
+            logging.error("Plan generation error: %s", exc)
+            from zeno.safety.observer import _build_default_plan
+            default_steps = _build_default_plan(task)
+            return {
+                "title": f"Execute: {task[:40]}",
+                "steps": [step0] + default_steps,
+                "safety_summary": "Zeno Orchid formulated an execution blueprint.",
+                "sessionId": session_id,
+                "sessionWorkspace": str(session_dir),
+                "projectFolder": str(project_folder),
+            }
 
     def run_agent_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
-        Execute an agentic task (or single step of a plan) using ZenoAgent with real tool calling.
-        The AI model receives the goal, invokes tools (write_file, run_python, etc.),
-        and returns the result with a log of tool actions taken.
+        Execute one agentic step using ZenoAgent with real tool calling.
+        - Max 2 retries on retryable errors (SSL, 503, 429) with 10s / 20s waits.
+        - After 2 retries, tries next model. After all models, stops and sets canResume=True.
+        - Returns live_logs list so UI can display tool calls and retry notices.
+        - Checks abort signal before every retry/model switch.
+        - Includes canResume flag for when user needs to decide to continue or not.
         """
         message = payload.get("message", "")
         model = payload.get("model", "gemini-3.5-flash-lite")
@@ -1133,18 +1328,21 @@ class ZenoDesktopApi:
         plan_title = payload.get("planTitle", "")
         step_index = payload.get("stepIndex", None)
         total_steps = payload.get("totalSteps", None)
+        session_workspace = payload.get("sessionWorkspace", str(DEFAULT_WORKSPACE_DIR))
+        project_folder = payload.get("projectFolder", session_workspace)
+        revisit = payload.get("revisit", False)  # True = re-run without advancing
 
         if not message and not current_step:
             return {
                 "error": "NO_MESSAGE",
-                "reply": "No task was specified. Describe what you want the agent to build or do.",
+                "reply": "No task was specified.",
                 "toolActions": [],
+                "live_logs": [],
                 "inputTokens": 0,
                 "outputTokens": 0,
                 "modelUsed": model,
             }
 
-        # Resolve API key
         load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
         target_key = (
             custom_api_key.strip() if custom_api_key
@@ -1156,40 +1354,49 @@ class ZenoDesktopApi:
                 "error": "API_KEY_MISSING",
                 "reply": "API key missing. Open Settings and add your API key.",
                 "toolActions": [],
+                "live_logs": [{"type": "error", "text": "API key missing"}],
                 "inputTokens": 0,
                 "outputTokens": 0,
                 "modelUsed": model,
             }
 
-        # Format prompt for the agent
+        # Clear any stale abort from a previous task start
+        if step_index == 0:
+            self._clear_abort()
+
+        # Build task prompt with project folder enforcement
         if current_step:
             step_header = f"Step {step_index + 1} of {total_steps}: " if step_index is not None and total_steps else ""
+            revisit_note = " NOTE: This is a REVISION run — fix any mistakes from the previous attempt at this step." if revisit else ""
             task_prompt = (
                 f"Overall Project: {plan_title or message}\n"
-                f"Active Directive: {step_header}{current_step}\n\n"
-                f"You are Zeno Builder, executing this specific milestone under the supervision of Zeno Observer.\n"
-                f"CRITICAL EXECUTION REQUIREMENTS:\n"
-                f"1. You MUST invoke tools (e.g. write_file, append_file, run_python, shell_run, run_tests, git_status, report_write) to perform actual physical work on disk.\n"
-                f"2. Write complete, production-grade code with full functions, class definitions, and error handling. NEVER use placeholders, ellipsis (...), or shortened code blocks.\n"
-                f"3. If this milestone involves tests or verification, run them using run_python, run_tests, or shell_run, inspect the output, and confirm all assertions pass.\n"
-                f"4. Once all tool actions succeed, provide a concise summary of the files written and validations executed."
+                f"Project Folder (ALL files MUST go here): {project_folder}\n"
+                f"Session Workspace: {session_workspace}\n"
+                f"Active Directive: {step_header}{current_step}{revisit_note}\n\n"
+                f"You are Zeno Bud, supervised by Zeno Orchid.\n"
+                f"EXECUTION REQUIREMENTS:\n"
+                f"1. ALL files MUST be saved inside: {project_folder}\n"
+                f"2. Use write_file, run_python, shell_run tools to do actual work.\n"
+                f"3. Write complete, production-ready code — NO placeholders or ellipsis.\n"
+                f"4. For shell commands: use 'python -m venv .venv', 'pip install ...', etc. as needed.\n"
+                f"5. For servers: start them, wait briefly, screenshot, then terminate the process.\n"
+                f"6. Verification: run tests, check outputs, confirm files exist before summarizing.\n"
+                f"7. Once done, provide a concise summary of exactly what was accomplished."
             )
         else:
             task_prompt = (
                 f"{message}\n\n"
-                f"You are Zeno Builder. Use your native tools (write_file, run_python, shell_run, git_status, run_tests, etc.) to actively complete this task on disk."
+                f"Project Folder (ALL files MUST go here): {project_folder}\n"
+                f"You are Zeno Bud. Use tools to actively complete this task."
             )
 
-        # Collect tool actions reported by the agent during execution
         tool_actions: list[str] = []
-        status_info: dict[str, Any] = {
-            "text": "Running",
-            "in_tokens": 0,
-            "out_tokens": 0,
-        }
+        live_logs: list[dict[str, Any]] = []
+        status_info: dict[str, Any] = {"text": "Running", "in_tokens": 0, "out_tokens": 0}
 
         def on_tool_used(line: str) -> None:
             tool_actions.append(line)
+            live_logs.append({"type": "tool", "text": line, "ts": datetime.now().strftime("%H:%M:%S")})
 
         def on_status_change(status: str, in_tok: int, out_tok: int) -> None:
             status_info["text"] = status
@@ -1197,115 +1404,327 @@ class ZenoDesktopApi:
             status_info["out_tokens"] = out_tok
 
         def on_progress_update(current: str, next_step: str) -> None:
-            pass  # Progress tracked on the frontend side
+            pass
 
-        # Build the agent with tool callbacks
-        agent = ZenoAgent(
-            on_tool_used=on_tool_used,
-            on_status_change=on_status_change,
-            on_progress_update=on_progress_update,
-        )
-        agent.active_model = model
-        agent.auto_approve_safe = True
+        # SSL / network error detection helper
+        RETRYABLE_SIGNATURES = [
+            "ssl", "eof", "connection", "wsarecv", "503", "429",
+            "unavailable", "rate limit", "quota", "exhausted",
+            "high demand", "overloaded", "timeout", "timed out",
+            "network", "socket", "broken pipe", "reset by peer",
+        ]
 
-        # Seed the agent with prior conversation history, prioritizing compacted context anchor
-        if isinstance(history, list):
-            compacted_anchor = None
-            recent_items = []
-            for h in history:
-                content_str = h.get("content", "")
-                if "Compacted Conversation Memory" in content_str or "[CONVERSATION COMPACTED CONTEXT" in content_str:
-                    compacted_anchor = h
-                else:
-                    recent_items.append(h)
+        def is_retryable(err: str) -> bool:
+            el = err.lower()
+            return any(x in el for x in RETRYABLE_SIGNATURES)
 
-            effective_history = ([compacted_anchor] if compacted_anchor else []) + recent_items[-8:]
-            for h in effective_history:
-                role = h.get("role", "user")
-                content = h.get("content", "")
-                if content:
-                    agent.history.append({
-                        "role": "user" if role == "user" else "assistant",
-                        "content": content,
+        # Build models-to-try list
+        all_models_to_try = [model]
+        for m in self.GEMINI_MODELS_ORDER:
+            if m not in all_models_to_try:
+                all_models_to_try.append(m)
+
+        MAX_RETRIES_PER_MODEL = 2
+        retry_waits = [10, 20]  # seconds
+        last_error = ""
+        last_reply = ""
+
+        for model_idx, model_candidate in enumerate(all_models_to_try):
+            # Check abort before trying each model
+            if self._check_abort():
+                live_logs.append({"type": "abort", "text": "Agent stopped by user.", "ts": datetime.now().strftime("%H:%M:%S")})
+                return {
+                    "error": "ABORTED",
+                    "reply": "Agent was stopped by the user.",
+                    "toolActions": tool_actions,
+                    "live_logs": live_logs,
+                    "inputTokens": status_info["in_tokens"],
+                    "outputTokens": status_info["out_tokens"],
+                    "modelUsed": model_candidate,
+                    "canResume": False,
+                    "aborted": True,
+                }
+
+            if model_idx > 0:
+                live_logs.append({
+                    "type": "model_switch",
+                    "text": f"Zeno Orchid: Switching to model {model_candidate} after exhausting {all_models_to_try[model_idx-1]}.",
+                    "ts": datetime.now().strftime("%H:%M:%S"),
+                })
+                logging.info("Orchid model switch -> %s", model_candidate)
+
+            for attempt in range(MAX_RETRIES_PER_MODEL + 1):
+                # Check abort before each attempt
+                if self._check_abort():
+                    live_logs.append({"type": "abort", "text": "Agent stopped by user.", "ts": datetime.now().strftime("%H:%M:%S")})
+                    return {
+                        "error": "ABORTED",
+                        "reply": "Agent was stopped by the user.",
+                        "toolActions": tool_actions,
+                        "live_logs": live_logs,
+                        "inputTokens": status_info["in_tokens"],
+                        "outputTokens": status_info["out_tokens"],
+                        "modelUsed": model_candidate,
+                        "canResume": False,
+                        "aborted": True,
+                    }
+
+                if attempt > 0:
+                    wait_secs = retry_waits[min(attempt - 1, len(retry_waits) - 1)]
+                    live_logs.append({
+                        "type": "retry",
+                        "text": f"Zeno Orchid: Retry {attempt}/{MAX_RETRIES_PER_MODEL} on {model_candidate} — waiting {wait_secs}s...",
+                        "wait_secs": wait_secs,
+                        "ts": datetime.now().strftime("%H:%M:%S"),
                     })
+                    logging.info("Orchid retry %d/%d on %s — sleeping %ds", attempt, MAX_RETRIES_PER_MODEL, model_candidate, wait_secs)
+                    time.sleep(wait_secs)
 
-        try:
-            reply = agent.run_user_message(task_prompt, is_agentic_mode=True)
+                    # Check abort again after sleep
+                    if self._check_abort():
+                        live_logs.append({"type": "abort", "text": "Agent stopped by user.", "ts": datetime.now().strftime("%H:%M:%S")})
+                        return {
+                            "error": "ABORTED",
+                            "reply": "Agent was stopped by the user.",
+                            "toolActions": tool_actions,
+                            "live_logs": live_logs,
+                            "inputTokens": status_info["in_tokens"],
+                            "outputTokens": status_info["out_tokens"],
+                            "modelUsed": model_candidate,
+                            "canResume": False,
+                            "aborted": True,
+                        }
 
-            # Collect any screenshots created during this agent step
-            captured_screenshots: list[dict[str, Any]] = []
-            for action_text in tool_actions:
-                if "screenshots" in action_text or ".png" in action_text:
-                    m = re.search(r"screenshots[/\\]([^\s\)\"',]+\.png)", action_text)
-                    if m:
-                        img_name = m.group(1)
-                        img_path = SCREENSHOTS_DIR / img_name
-                        if img_path.exists():
-                            try:
-                                with open(img_path, "rb") as f:
-                                    b64 = base64.b64encode(f.read()).decode("utf-8")
-                                captured_screenshots.append({
-                                    "name": img_name,
-                                    "path": str(img_path.resolve()),
-                                    "base64": f"data:image/png;base64,{b64}",
-                                })
-                            except Exception:
-                                pass
+                agent = ZenoAgent(
+                    on_tool_used=on_tool_used,
+                    on_status_change=on_status_change,
+                    on_progress_update=on_progress_update,
+                )
+                agent.active_model = model_candidate
+                agent.auto_approve_safe = True
+                agent.auto_switch_enabled = False
 
-            return {
-                "reply": reply,
-                "inputTokens": status_info["in_tokens"],
-                "outputTokens": status_info["out_tokens"],
-                "modelUsed": model,
-                "toolActions": tool_actions,
-                "screenshots": captured_screenshots,
-            }
-        except Exception as exc:
-            return {
-                "error": str(exc),
-                "reply": f"Agent task encountered an error: {exc}",
-                "inputTokens": status_info["in_tokens"],
-                "outputTokens": status_info["out_tokens"],
-                "modelUsed": model,
-                "toolActions": tool_actions,
-            }
+                # Seed history
+                if isinstance(history, list):
+                    compacted_anchor = None
+                    recent_items = []
+                    for h in history:
+                        content_str = h.get("content", "")
+                        if "Compacted Conversation Memory" in content_str:
+                            compacted_anchor = h
+                        else:
+                            recent_items.append(h)
+                    effective_history = ([compacted_anchor] if compacted_anchor else []) + recent_items[-6:]
+                    for h in effective_history:
+                        role = h.get("role", "user")
+                        content = h.get("content", "")
+                        if content:
+                            agent.history.append({
+                                "role": "user" if role == "user" else "assistant",
+                                "content": content,
+                            })
 
-    # -------------------------------------------------------------------------
-    # Autonomous Agent & Safety Observer Bridge
-    # -------------------------------------------------------------------------
-    def create_agent_plan(self, payload: dict[str, Any]) -> dict[str, Any]:
+                try:
+                    reply = agent.run_user_message(task_prompt, is_agentic_mode=True)
+                    last_reply = reply
+
+                    # Check if reply itself is an error message
+                    is_error_reply = any(x in reply.lower() for x in [
+                        "error communicating", "api_key_missing", "ssl", "eof",
+                        "503", "429", "service unavailable", "rate limit", "quota",
+                        "connection", "wsarecv", "timeout",
+                    ])
+                    if is_error_reply and attempt < MAX_RETRIES_PER_MODEL:
+                        last_error = reply
+                        live_logs.append({"type": "error", "text": f"Step error (will retry): {reply[:120]}", "ts": datetime.now().strftime("%H:%M:%S")})
+                        continue  # retry
+
+                    # Collect screenshots
+                    captured_screenshots: list[dict[str, Any]] = []
+                    for action_text in tool_actions:
+                        if "screenshots" in action_text or ".png" in action_text:
+                            m_match = re.search(r"screenshots[/\\\\]([^\s\)\"',]+\.png)", action_text)
+                            if m_match:
+                                img_name = m_match.group(1)
+                                img_path = SCREENSHOTS_DIR / img_name
+                                if img_path.exists():
+                                    try:
+                                        with open(img_path, "rb") as f:
+                                            b64 = base64.b64encode(f.read()).decode("utf-8")
+                                        captured_screenshots.append({
+                                            "name": img_name,
+                                            "path": str(img_path.resolve()),
+                                            "base64": f"data:image/png;base64,{b64}",
+                                        })
+                                    except Exception:
+                                        pass
+
+                    live_logs.append({"type": "done", "text": f"Step complete on {model_candidate}", "ts": datetime.now().strftime("%H:%M:%S")})
+
+                    return {
+                        "reply": reply,
+                        "inputTokens": status_info["in_tokens"],
+                        "outputTokens": status_info["out_tokens"],
+                        "modelUsed": model_candidate,
+                        "toolActions": tool_actions,
+                        "live_logs": live_logs,
+                        "screenshots": captured_screenshots,
+                        "canResume": False,
+                    }
+
+                except Exception as exc:
+                    last_error = str(exc)
+                    live_logs.append({
+                        "type": "error",
+                        "text": f"Exception on {model_candidate} attempt {attempt+1}: {last_error[:200]}",
+                        "ts": datetime.now().strftime("%H:%M:%S"),
+                    })
+                    if is_retryable(last_error) and attempt < MAX_RETRIES_PER_MODEL:
+                        continue  # retry
+                    break  # non-retryable or retries exhausted — try next model
+
+        # All models and retries exhausted — user must decide
+        live_logs.append({
+            "type": "exhausted",
+            "text": f"Zeno Orchid: All retry attempts and model fallbacks exhausted. Last error: {last_error[:200]}",
+            "ts": datetime.now().strftime("%H:%M:%S"),
+        })
+        return {
+            "error": last_error or "All models and retries exhausted.",
+            "reply": (
+                f"Zeno Orchid has exhausted all retry attempts and model fallbacks. "
+                f"Last error: {last_error or 'Unknown error'}. "
+                f"Type 'continue' to retry this step, or 'skip' to move to the next step."
+            ),
+            "inputTokens": status_info["in_tokens"],
+            "outputTokens": status_info["out_tokens"],
+            "modelUsed": model,
+            "toolActions": tool_actions,
+            "live_logs": live_logs,
+            "canResume": True,
+        }
+
+    def verify_step_completion(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
         """
-        Zeno Observer safety guard generates a multi-step milestone plan
-        (5 to 10 granular tasks) for complex agent directives.
+        Ask Zeno Orchid (via AI) to verify a step was actually completed.
+        Checks for: file existence, test output, server response, etc.
+        Returns {verified: bool, reason: str, checks: list}.
         """
-        task = payload.get("task") or payload.get("message", "")
-        model = payload.get("model", "gemini-3.5-flash-lite")
+        step_text = payload.get("step_text", "")
+        step_output = payload.get("step_output", "")
+        project_folder = payload.get("project_folder", "")
         custom_key = payload.get("customApiKey", "")
 
         load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
         api_key = custom_key.strip() if custom_key else os.getenv("GEMINI_API_KEY", "").strip()
 
-        try:
-            return plan_task_with_observer(task_description=task, api_key=api_key, model=model)
-        except Exception as exc:
-            logging.error("Plan generation error: %s", exc)
+        # List files in project folder for context
+        files_summary = ""
+        if project_folder:
+            try:
+                pf = Path(project_folder)
+                if pf.exists():
+                    file_list = [str(p.relative_to(pf)) for p in sorted(pf.rglob("*")) if p.is_file()]
+                    files_summary = "Files present: " + ", ".join(file_list[:20]) if file_list else "No files found in project folder."
+            except Exception:
+                pass
+
+        if not api_key or api_key == "your_key_here":
+            # Heuristic check without AI
+            has_output = len(step_output.strip()) > 50
+            no_obvious_error = not any(x in step_output.lower() for x in ["traceback", "error:", "exception:", "failed"])
+            verified = has_output and no_obvious_error
             return {
-                "title": f"Execute: {task[:40]}",
-                "steps": [
-                    "Zeno Observer: Audit environment dependencies, project paths, and roaming permissions",
-                    "Zeno Builder: Establish project scaffold, manifests, and architecture specification",
-                    "Zeno Builder: Define core data schemas, type contracts, and data structures",
-                    "Zeno Builder: Implement primary domain engine and core business logic modules",
-                    "Zeno Builder: Implement auxiliary utilities, validation rules, and input handlers",
-                    "Zeno Builder: Build interactive CLI command parser and error handling subsystems",
-                    "Zeno Builder: Author comprehensive automated unit test suite with high coverage",
-                    "Zeno Builder: Author edge-case and boundary verification test fixtures",
-                    "Zeno Builder: Execute test runner (run_tests) and assert zero failure states",
-                    "Zeno Observer: Conduct static security audit, dependency checks, and generate final report",
-                ],
-                "safety_summary": "Zeno Observer formulated a detailed 10-milestone engineering blueprint.",
+                "verified": verified,
+                "reason": "Heuristic check (no API key): output present and no traceback detected.",
+                "checks": ["output_present", "no_traceback"],
             }
 
+        verification_prompt = (
+            f"You are Zeno Orchid, the safety and quality guard. "
+            f"Determine whether the following task step was successfully completed based on the agent output and project state.\n\n"
+            f"Step directive: {step_text}\n\n"
+            f"Agent output:\n{step_output[:3000]}\n\n"
+            f"{files_summary}\n\n"
+            f"Answer ONLY with a JSON object like: {{\"verified\": true, \"reason\": \"...\", \"checks\": [\"...\"]}}\n"
+            f"Set verified=true only if the step is genuinely complete with no critical errors. "
+            f"Set verified=false if there are exceptions, missing files, or incomplete work."
+        )
+
+        try:
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model="gemini-2.0-flash-lite",
+                contents=verification_prompt,
+                config=types.GenerateContentConfig(max_output_tokens=512, temperature=0.1),
+            )
+            raw = (response.text or "").strip()
+            # Extract JSON from response
+            json_match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+                return {
+                    "verified": bool(result.get("verified", False)),
+                    "reason": result.get("reason", ""),
+                    "checks": result.get("checks", []),
+                }
+        except Exception as exc:
+            logging.warning("Step verification AI call failed: %s", exc)
+
+        # Fallback heuristic
+        has_output = len(step_output.strip()) > 50
+        no_obvious_error = not any(x in step_output.lower() for x in ["traceback", "error:", "exception:", "failed", "ssl:"])
+        return {
+            "verified": has_output and no_obvious_error,
+            "reason": "Heuristic fallback: output present and no error keywords detected.",
+            "checks": ["output_length", "no_error_keywords"],
+        }
+
+    def run_agent_chat(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """
+        Companion chat for the agent workspace — answers questions about what
+        Zeno Bud is building without interfering with the agent loop.
+        Always uses the cheapest model (gemini-2.0-flash-lite).
+        """
+        message = payload.get("message", "")
+        agent_context = payload.get("agentContext", "")
+        history = payload.get("history", [])
+        custom_key = payload.get("customApiKey", "")
+
+        load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
+        api_key = custom_key.strip() if custom_key else os.getenv("GEMINI_API_KEY", "").strip()
+
+        if not api_key or api_key == "your_key_here":
+            return {"error": "API_KEY_MISSING", "reply": "API key missing."}
+
+        system_prompt = (
+            f"{ORCHID_SYSTEM_PROMPT}\n\n"
+            f"You are the Zeno Agent Companion. You answer questions about the work Zeno Bud is doing. "
+            f"Be helpful, concise, and knowledgeable about the project context below.\n\n"
+            f"AGENT CONTEXT:\n{agent_context}\n"
+            if agent_context else
+            f"{ORCHID_SYSTEM_PROMPT}\nYou are the Zeno Agent Companion — a helpful assistant for questions about the project being built."
+        )
+
+        res = self._execute_gemini_turn(
+            api_key=api_key,
+            model="gemini-2.0-flash-lite",
+            system_instruction=system_prompt,
+            history=history,
+            message=message,
+            attachments=[],
+            thinking_level="Low",
+        )
+        return res
+
+    # -------------------------------------------------------------------------
+    # Autonomous Agent & Safety Observer Bridge
+    # -------------------------------------------------------------------------
     def get_pending_approvals(self) -> list[dict[str, Any]]:
         """Return list of actions currently awaiting human operator approval."""
         try:
@@ -1325,30 +1744,33 @@ class ZenoDesktopApi:
             return {"status": "error", "error": str(exc), "approval_id": approval_id}
 
     def get_active_jobs(self) -> list[dict[str, Any]]:
-        """Return active background jobs running in the worker pool."""
+        """Return active background jobs running under JobSupervisor (Rule E & G)."""
         try:
-            pool = get_worker_pool()
-            return pool.list_active_jobs()
+            return self.job_supervisor.list_jobs()
         except Exception as exc:
             logging.error("Error fetching active jobs: %s", exc)
             return []
 
+    def get_job_logs(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Return streaming stdout/stderr logs for a specific job."""
+        job_id = payload.get("job_id", "")
+        return {"logs": self.job_supervisor.get_job_logs(job_id)}
+
     def cancel_background_job(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Cancel a running background job and terminate its process tree."""
+        """Cancel a running background job and terminate its entire process tree (Rule E)."""
         job_id = payload.get("job_id", "")
         try:
-            pool = get_worker_pool()
-            cancelled = pool.cancel_job(job_id)
-            return {"status": "cancelled" if cancelled else "not_running", "job_id": job_id}
+            success = self.job_supervisor.stop_job(job_id)
+            return {"status": "cancelled" if success else "not_running", "job_id": job_id}
         except Exception as exc:
             return {"status": "error", "error": str(exc), "job_id": job_id}
 
     def get_observer_dialogues(self, limit: int = 30) -> list[dict[str, Any]]:
-        """Return real-time safety dialogues between Zeno Builder and Zeno Observer."""
+        """Return real-time safety dialogues between Zeno Bud and Zeno Orchid."""
         try:
             return get_recent_dialogues(limit=limit)
         except Exception as exc:
-            logging.error("Error fetching observer dialogues: %s", exc)
+            logging.error("Error fetching Orchid dialogues: %s", exc)
             return []
 
     def get_action_audit_log(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -1358,3 +1780,193 @@ class ZenoDesktopApi:
         except Exception as exc:
             logging.error("Error fetching action logs: %s", exc)
             return []
+
+    def list_background_jobs(self, payload: Any = None, *args, **kwargs) -> list[dict[str, Any]]:
+        """Return active background jobs running under JobSupervisor."""
+        return self.get_active_jobs()
+
+    def get_safety_evaluations(self, payload: Any = None, *args, **kwargs) -> list[dict[str, Any]]:
+        """Return safety evaluations log."""
+        limit = 50
+        if isinstance(payload, dict):
+            limit = payload.get("limit", 50)
+        return self.get_action_audit_log(limit=limit)
+
+    def list_pending_approvals(self, payload: Any = None, *args, **kwargs) -> list[dict[str, Any]]:
+        """Return pending human review actions."""
+        return self.get_pending_approvals()
+
+    def get_user_memory(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Return user persistent memory."""
+        return {"memory": self.get_memory()}
+
+    def save_user_memory(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Save user persistent memory."""
+        content = payload.get("content", "") if isinstance(payload, dict) else str(payload or "")
+        success = self.save_memory(content)
+        return {"ok": success}
+
+    def jump_to_step(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Rule C: Jump back to earlier step."""
+        return self.revisit_agent_step(payload or {})
+
+    def stop_agent_run(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Rule E: Stop agent run and kill background jobs."""
+        return self.abort_agent_run(payload or {})
+
+    def assistant_send_message(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Assistant conversation turn."""
+        return self.chat(payload or {})
+
+    def clear_background_jobs(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Clear finished or selected background jobs from JobSupervisor."""
+        job_ids = None
+        if isinstance(payload, dict):
+            job_ids = payload.get("job_ids")
+        return self.job_supervisor.clear_jobs(job_ids)
+
+    def delete_workspace_files(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Delete specified or all files in active project workspace."""
+        from zeno.tools.file_tools import get_active_project_dir
+        from zeno.settings import DEFAULT_WORKSPACE_DIR
+
+        paths = []
+        delete_all = False
+        project_folder = None
+        if isinstance(payload, dict):
+            paths = payload.get("paths", [])
+            delete_all = payload.get("all", False)
+            project_folder = payload.get("project_folder")
+
+        target_dir = Path(project_folder).expanduser().resolve() if project_folder else (get_active_project_dir() or DEFAULT_WORKSPACE_DIR)
+        deleted = []
+        errors = []
+
+        if delete_all:
+            for item in target_dir.rglob("*"):
+                if item.is_file() and ".venv" not in str(item) and ".git" not in str(item):
+                    try:
+                        item.unlink()
+                        deleted.append(str(item))
+                    except Exception as e:
+                        errors.append(f"{item.name}: {e}")
+        else:
+            for p_str in paths:
+                p = Path(p_str).expanduser().resolve()
+                if not p.exists():
+                    p = (target_dir / p_str).resolve()
+                if p.exists() and p.is_file():
+                    try:
+                        p.unlink()
+                        deleted.append(str(p))
+                    except Exception as e:
+                        errors.append(f"{p.name}: {e}")
+
+        return {"ok": len(errors) == 0, "deleted": deleted, "errors": errors}
+
+    def clear_safety_evaluations(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Clear action logs from SQLite safety database."""
+        from zeno.safety.database import clear_action_logs
+        log_ids = None
+        if isinstance(payload, dict):
+            log_ids = payload.get("log_ids")
+        success = clear_action_logs(log_ids)
+        return {"ok": success}
+
+    def save_all_permissions(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Save whole permissions dict."""
+        from zeno.permissions import save_permissions
+        perms = payload.get("permissions", {}) if isinstance(payload, dict) else {}
+        save_permissions(perms)
+        return {"ok": True, "permissions": perms}
+
+    # -------------------------------------------------------------------------
+    # In-App File Viewer & Explorer Bridge
+    # -------------------------------------------------------------------------
+    def open_in_explorer(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """Open a file or folder in the system file explorer."""
+        path = ""
+        if isinstance(payload, dict):
+            path = payload.get("path", "")
+        elif isinstance(payload, str):
+            path = payload
+        elif args and len(args) > 0:
+            path = args[0].get("path", "") if isinstance(args[0], dict) else str(args[0])
+        try:
+            return _open_in_explorer(path)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def read_file_for_viewer(self, payload: Any = None, *args, **kwargs) -> dict[str, Any]:
+        """
+        Read a file and return its contents as base64 + raw text for in-app viewing.
+        Supports images (PNG/JPG/GIF/WebP), text, markdown, code, and JSON.
+        """
+        path = ""
+        if isinstance(payload, dict):
+            path = payload.get("path", "")
+        elif isinstance(payload, str):
+            path = payload
+        elif args and len(args) > 0:
+            path = args[0].get("path", "") if isinstance(args[0], dict) else str(args[0])
+        try:
+            return _read_file_as_base64(path)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def download_file(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Download a file from a URL into the session workspace."""
+        url = payload.get("url", "") if isinstance(payload, dict) else str(payload)
+        dest = payload.get("destination_path", "") if isinstance(payload, dict) else ""
+        fname = payload.get("filename", "") if isinstance(payload, dict) else ""
+        try:
+            return _download_file(url=url, destination_path=dest, filename=fname)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def list_session_files(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """
+        List files created/modified in the current session workspace.
+        Returns rich metadata including mime type for viewer routing.
+        """
+        import mimetypes
+        session_workspace = payload.get("sessionWorkspace", "") if isinstance(payload, dict) else str(payload)
+        if not session_workspace:
+            session_workspace = str(DEFAULT_WORKSPACE_DIR)
+
+        target_dir = Path(session_workspace)
+        if not target_dir.exists():
+            return []
+
+        result = []
+        try:
+            for entry in sorted(target_dir.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
+                if entry.is_file() and not entry.name.startswith("."):
+                    mime_type, _ = mimetypes.guess_type(str(entry))
+                    if not mime_type:
+                        ext = entry.suffix.lower()
+                        mime_map = {
+                            ".py": "text/x-python", ".ts": "text/typescript",
+                            ".tsx": "text/typescript", ".js": "text/javascript",
+                            ".json": "application/json", ".md": "text/markdown",
+                            ".html": "text/html", ".css": "text/css",
+                            ".txt": "text/plain", ".csv": "text/csv",
+                        }
+                        mime_type = mime_map.get(ext, "application/octet-stream")
+                    stat = entry.stat()
+                    result.append({
+                        "name": entry.name,
+                        "path": str(entry.resolve()),
+                        "relative": str(entry.relative_to(target_dir)),
+                        "size_bytes": stat.st_size,
+                        "size": f"{round(stat.st_size / 1024, 1)} KB" if stat.st_size >= 1024 else f"{stat.st_size} B",
+                        "mime_type": mime_type,
+                        "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%H:%M:%S"),
+                    })
+                    if len(result) >= 50:
+                        break
+        except Exception as exc:
+            logging.warning("list_session_files error: %s", exc)
+
+        return result
+

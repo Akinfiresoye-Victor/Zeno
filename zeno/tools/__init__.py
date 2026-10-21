@@ -24,6 +24,7 @@ from zeno.tools.system_tools import system_info
 from zeno.tools.web_tools import web_search
 from zeno.tools.workspace_tools import create_project_workspace, organize_documents
 from zeno.tools.memory_tools import save_user_memory, read_user_memory
+from zeno.tools.download_tools import download_file, open_in_explorer, read_file_as_base64
 from zeno.tools.dev_tools import (
     job_submit,
     job_status,
@@ -69,6 +70,10 @@ ALL_TOOLS: list[Callable[..., Any]] = [
     get_network_status,
     save_user_memory,
     read_user_memory,
+    # Download, Explorer & In-App Viewer Tools
+    download_file,
+    open_in_explorer,
+    read_file_as_base64,
     # Development & Autonomous Safety Tools Suite
     job_submit,
     job_status,
@@ -114,6 +119,9 @@ TOOL_CATEGORIES: dict[str, str] = {
     "open_app": "app_launch",
     "run_python": "python_exec",
     "web_search": "web_search",
+    "download_file": "file_write",
+    "open_in_explorer": "app_launch",
+    "read_file_as_base64": "file_read",
     # Dev tools mapped to single grouped permission category: dev_tools
     "job_submit": "dev_tools",
     "job_status": "dev_tools",
@@ -164,4 +172,7 @@ __all__ = [
     "web_search",
     "list_running_processes",
     "get_network_status",
+    "download_file",
+    "open_in_explorer",
+    "read_file_as_base64",
 ]

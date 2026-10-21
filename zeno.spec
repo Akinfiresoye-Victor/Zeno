@@ -2,11 +2,11 @@
 from PyInstaller.utils.hooks import collect_all
 from PyInstaller.utils.hooks import copy_metadata
 
-datas = [('C:/Users/User/Desktop/zeno-ai-assistant/zeno/resources', 'zeno/resources'), ('C:/Users/User/Desktop/zeno-ai-assistant/zeno/resources', 'resources')]
+datas = [('C:/Users/User/Desktop/zeno-ai-assistant/dist', 'dist'), ('C:/Users/User/Desktop/zeno-ai-assistant/zeno/resources', 'zeno/resources')]
 binaries = []
 hiddenimports = []
-datas += copy_metadata('customtkinter')
-tmp_ret = collect_all('customtkinter')
+datas += copy_metadata('pywebview')
+tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 

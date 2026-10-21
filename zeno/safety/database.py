@@ -269,3 +269,23 @@ def get_recent_action_logs(limit: int = 50) -> list[dict[str, Any]]:
             return [dict(r) for r in rows]
         finally:
             conn.close()
+
+
+def clear_action_logs(log_ids: Optional[list[int | str]] = None) -> bool:
+    """Clear all or selected action logs from SQLite table."""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            if log_ids and len(log_ids) > 0:
+                placeholders = ",".join("?" for _ in log_ids)
+                cursor.execute(f"DELETE FROM action_log WHERE id IN ({placeholders})", log_ids)
+            else:
+                cursor.execute("DELETE FROM action_log")
+            conn.commit()
+            return True
+        except Exception:
+            return False
+        finally:
+            conn.close()
+

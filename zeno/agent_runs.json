@@ -1,0 +1,46 @@
+[
+  {
+    "id": "run-1792588810141",
+    "task_prompt": "Build a 2D car racing game in tkinter",
+    "title": "car-dash-tkinter-d2c4",
+    "project_folder": "C:\\Users\\User\\Documents\\ZenoWorkspace\\car-dash-tkinter-d2c4",
+    "workspace_name": "car-dash-tkinter-d2c4",
+    "status": "active",
+    "created_at": 1792588810.1412783,
+    "started_at": 1792588822.0422263,
+    "finished_at": null,
+    "messages": [],
+    "model_used": "gemini-3.5-flash-lite",
+    "tokens": {
+      "input": 0,
+      "output": 0
+    },
+    "error_summary": null,
+    "evidence_screenshots": [],
+    "active_step_id": null,
+    "total_steps": 15,
+    "verified_steps": 0
+  },
+  {
+    "id": "run-1792588227118",
+    "task_prompt": "Build me a 2d car racing games with tkinter",
+    "title": "car-dash-tkinter",
+    "project_folder": "C:\\Users\\User\\Documents\\ZenoWorkspace\\car-dash-tkinter",
+    "workspace_name": "car-dash-tkinter",
+    "status": "queued",
+    "created_at": 1792588227.1186867,
+    "started_at": null,
+    "finished_at": null,
+    "messages": [],
+    "model_used": "gemini-3.5-flash-lite",
+    "tokens": {
+      "input": 0,
+      "output": 0
+    },
+    "error_summary": null,
+    "evidence_screenshots": [],
+    "active_step_id": null,
+    "total_steps": 15,
+    "verified_steps": 0
+  }
+]

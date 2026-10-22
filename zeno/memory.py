@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 from typing import Optional
 
-from zeno.settings import MEMORY_FILE_PATH
+from zeno.settings import DEFAULT_MODEL, MEMORY_FILE_PATH
 
 DEFAULT_MEMORY_TEMPLATE = """# User Profile & Persistent Memory
 
@@ -118,7 +118,7 @@ def format_memory_for_prompt() -> str:
 def synthesize_memory_with_ai(
     new_notes: Any,
     api_key: str = "",
-    model: str = "gemini-3.5-flash-lite",
+    model: str = DEFAULT_MODEL,
 ) -> dict[str, str]:
     """
     Send existing memory and imported notes/facts to the AI to intelligently
@@ -128,7 +128,7 @@ def synthesize_memory_with_ai(
         notes_str = new_notes.get("notes") or new_notes.get("raw_text") or ""
         if not api_key:
             api_key = str(new_notes.get("customApiKey") or new_notes.get("apiKey") or "")
-        if model == "gemini-3.5-flash-lite":
+        if model == DEFAULT_MODEL:
             model = str(new_notes.get("model") or model)
         new_notes = str(notes_str)
     else:
@@ -171,7 +171,7 @@ def synthesize_memory_with_ai(
         from google.genai import types
 
         client = genai.Client(api_key=api_key)
-        candidates = [model, "gemini-3.5-flash-lite", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
+        candidates = [model, "gemini-2.5-flash-lite"]
         for c in candidates:
             try:
                 resp = client.models.generate_content(

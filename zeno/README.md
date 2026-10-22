@@ -191,12 +191,10 @@ pip install pyinstaller
 
 2. Run the packaging script:
 ```bash
+npm run build
 python build_desktop.py
 ```
-Or directly using the spec file:
-```bash
-pyinstaller zeno.spec
-```
+Build the frontend before packaging so the latest interface is included. The packaging script embeds the frontend files and application resources without copying previous builds into the new executable.
 
 3. The packaged desktop application will be available in the `dist/Zeno/` directory:
 - **Windows**: `dist/Zeno/Zeno.exe` (can be pinned to Taskbar or Desktop)

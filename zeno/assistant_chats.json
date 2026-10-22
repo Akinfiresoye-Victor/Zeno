@@ -1,5 +1,17 @@
 [
   {
+    "id": "thread-1792670272415",
+    "title": "New Conversation",
+    "messages": [],
+    "created_at": 1792670272.4152184,
+    "last_activity": 1792670272.4152186,
+    "model": "gemini-2.5-flash",
+    "total_tokens": {
+      "input": 0,
+      "output": 0
+    }
+  },
+  {
     "id": "sess-1792580332940",
     "title": "what did the agent build",
     "messages": [

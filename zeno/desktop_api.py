@@ -66,6 +66,7 @@ from zeno.safety.worker import (
 from zeno.settings import (
     CHATS_METADATA_PATH,
     DEFAULT_WORKSPACE_DIR,
+    DEFAULT_MODEL,
     ENV_FILE_PATH,
     HOME_DIR,
     ORCHID_SYSTEM_PROMPT,
@@ -224,8 +225,8 @@ class ZenoDesktopApi:
 
         reply, in_tokens, out_tokens = agent._execute_agent_loop(
             model_name=model,
-            recent_history=agent.history[-10:],
-            user_message=prompt,
+            messages_history=agent.history[-10:],
+            original_user_prompt=prompt,
             is_agentic_mode=True,
         )
         return {
@@ -308,11 +309,15 @@ class ZenoDesktopApi:
                 {"id": "monitor_1", "name": "Primary Display", "description": "Main physical screen"},
             ]
 
-    def capture_screen(self, target: str = "all", tab_name: str = "") -> dict[str, Any]:
+    def capture_screen(self, target: Any = "all", tab_name: str = "") -> dict[str, Any]:
         """
         Capture the screen, physical monitor, or window and return metadata
         with base64 image data URI for direct web preview.
         """
+        # Support dict payload from callBridge({ target: 'all' })
+        if isinstance(target, dict):
+            tab_name = target.get("tab_name", tab_name)
+            target = target.get("target", "all")
         try:
             filepath = capture_screen(target=target, tab_name=tab_name)
             p = Path(filepath)
@@ -501,7 +506,7 @@ class ZenoDesktopApi:
         using the selected AI model.
         """
         notes = payload.get("notes", "")
-        model = payload.get("model", "gemini-3.5-flash-lite")
+        model = payload.get("model", DEFAULT_MODEL)
         custom_key = payload.get("customApiKey", "")
         load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
         target_key = custom_key.strip() if custom_key else os.getenv("GEMINI_API_KEY", "").strip()
@@ -515,7 +520,7 @@ class ZenoDesktopApi:
             "autoApproveSafe": os.getenv("ZENO_AUTO_APPROVE", "true").lower() == "true",
             "autoSwitch": os.getenv("ZENO_AUTO_SWITCH", "true").lower() == "true",
             "thinkingLevel": os.getenv("ZENO_THINKING_LEVEL", "Medium"),
-            "defaultModel": os.getenv("ZENO_DEFAULT_MODEL", "gemini-3.5-flash-lite"),
+            "defaultModel": os.getenv("ZENO_DEFAULT_MODEL", DEFAULT_MODEL),
             "keys": {
                 "Gemini": os.getenv("GEMINI_API_KEY", ""),
                 "Anthropic Claude": os.getenv("ANTHROPIC_API_KEY", ""),
@@ -613,15 +618,15 @@ class ZenoDesktopApi:
         """Reset persistent memory to default template."""
         return clear_memory()
 
-    def import_memory_ai(self, payload: Any = None, model: str = "gemini-3.5-flash-lite") -> dict[str, Any]:
+    def import_memory_ai(self, payload: Any = None, model: str = DEFAULT_MODEL) -> dict[str, Any]:
         """Synthesize and merge raw memory notes into structured markdown using AI."""
         if isinstance(payload, dict):
             notes = payload.get("notes") or payload.get("raw_text") or ""
-            target_model = payload.get("model") or model or "gemini-3.5-flash-lite"
+            target_model = payload.get("model") or model or DEFAULT_MODEL
             custom_key = payload.get("customApiKey") or ""
         else:
             notes = str(payload or "")
-            target_model = model or "gemini-3.5-flash-lite"
+            target_model = model or DEFAULT_MODEL
             custom_key = ""
 
         load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
@@ -667,17 +672,15 @@ class ZenoDesktopApi:
     # -------------------------------------------------------------------------
     # Conversational AI Dispatch
     # -------------------------------------------------------------------------
-    # Model catalog and fallback order for Gemini (as requested: cheapest -> second smartest -> smartest)
+    # Model catalog and fallback order for Gemini.
     GEMINI_MODELS_ORDER = [
-        "gemini-3.5-flash-lite",
-        "gemini-3.6-flash",
-        "gemini-3.8-flash",
+        "gemini-2.5-flash-lite",
+        DEFAULT_MODEL,
     ]
 
     GEMINI_MODEL_CANDIDATES: dict[str, list[str]] = {
-        "gemini-3.5-flash-lite": ["gemini-3.5-flash-lite", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-flash"],
-        "gemini-3.6-flash": ["gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash"],
-        "gemini-3.8-flash": ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"],
+        "gemini-2.5-flash-lite": ["gemini-2.5-flash-lite", DEFAULT_MODEL],
+        DEFAULT_MODEL: [DEFAULT_MODEL, "gemini-2.5-flash-lite"],
     }
 
     def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -685,11 +688,11 @@ class ZenoDesktopApi:
         Execute conversational AI turn using configured API keys and models.
         Supports text, attachments, images, and tools.
         Automatically handles 503 UNAVAILABLE / high demand by falling back
-        across the 3 Gemini models (gemini-3.5-flash-lite, gemini-3.6-flash, gemini-3.8-flash).
+        across the configured Gemini Flash models.
         """
         message = payload.get("message", "")
         history = payload.get("history", [])
-        requested_model = (payload.get("model", "") or "gemini-3.5-flash-lite").strip()
+        requested_model = (payload.get("model", "") or DEFAULT_MODEL).strip()
         thinking_level = payload.get("thinkingLevel", "Medium")
         custom_api_key = payload.get("customApiKey", "")
         mode = payload.get("mode", "chat")
@@ -1145,7 +1148,7 @@ class ZenoDesktopApi:
         structured contextual memory to save tokens while keeping the AI fully informed.
         """
         messages = payload.get("messages", [])
-        model = payload.get("model", "gemini-3.5-flash-lite")
+        model = payload.get("model", DEFAULT_MODEL)
         custom_api_key = payload.get("customApiKey", "")
 
         if not messages or len(messages) <= 2:
@@ -1260,7 +1263,7 @@ class ZenoDesktopApi:
         Returns sessionId, sessionWorkspace, and projectFolder.
         """
         task = payload.get("task") or payload.get("message", "")
-        model = payload.get("model", "gemini-3.5-flash-lite")
+        model = payload.get("model", DEFAULT_MODEL)
         custom_key = payload.get("customApiKey", "")
         session_id = payload.get("sessionId", "")
 
@@ -1321,7 +1324,7 @@ class ZenoDesktopApi:
         - Includes canResume flag for when user needs to decide to continue or not.
         """
         message = payload.get("message", "")
-        model = payload.get("model", "gemini-3.5-flash-lite")
+        model = payload.get("model", DEFAULT_MODEL)
         history = payload.get("history", [])
         custom_api_key = payload.get("customApiKey", "")
         current_step = payload.get("currentStep", "")
@@ -1659,7 +1662,7 @@ class ZenoDesktopApi:
             from google.genai import types
             client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
-                model="gemini-2.0-flash-lite",
+                model="gemini-2.5-flash-lite",
                 contents=verification_prompt,
                 config=types.GenerateContentConfig(max_output_tokens=512, temperature=0.1),
             )
@@ -1689,7 +1692,7 @@ class ZenoDesktopApi:
         """
         Companion chat for the agent workspace — answers questions about what
         Zeno Bud is building without interfering with the agent loop.
-        Always uses the cheapest model (gemini-2.0-flash-lite).
+        Uses the lightweight Gemini Flash model.
         """
         message = payload.get("message", "")
         agent_context = payload.get("agentContext", "")
@@ -1713,7 +1716,7 @@ class ZenoDesktopApi:
 
         res = self._execute_gemini_turn(
             api_key=api_key,
-            model="gemini-2.0-flash-lite",
+            model="gemini-2.5-flash-lite",
             system_instruction=system_prompt,
             history=history,
             message=message,
@@ -1969,4 +1972,3 @@ class ZenoDesktopApi:
             logging.warning("list_session_files error: %s", exc)
 
         return result
-

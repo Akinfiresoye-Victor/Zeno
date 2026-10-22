@@ -152,6 +152,19 @@ class ErrorClassifier:
                 suggest_provider_switch=True,
             )
 
+        if re.search(
+            r"\b404\b.*\bmodels?/|model.{0,100}(not found|does not exist)|not found for api version",
+            lower_msg,
+        ):
+            return ClassifiedError(
+                category=ErrorCategory.BAD_REQUEST,
+                raw_message=msg,
+                is_retryable=False,
+                recommended_backoff_seconds=0.0,
+                user_friendly_summary="The selected Gemini model is unavailable. Choose a supported model in Settings.",
+                suggest_provider_switch=True,
+            )
+
         # 5. Bad Request
         if any(re.search(pat, lower_msg) for pat in cls.BAD_REQUEST_PATTERNS):
             return ClassifiedError(

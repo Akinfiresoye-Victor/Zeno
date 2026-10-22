@@ -112,6 +112,29 @@ export default function App() {
       // 3. System Telemetry
       const telem = await api.settings.getSystemStatus();
       setTelemetry(telem);
+
+      // 4. Restore API keys from backend .env (survives app restart)
+      try {
+        const backendKeys = await api.settings.loadApiKeys();
+        if (backendKeys && backendKeys.length > 0) {
+          setApiKeySlots((prev) => {
+            const merged = [...prev];
+            backendKeys.forEach((bk) => {
+              const existing = merged.find((s) => s.provider === bk.provider);
+              if (existing) {
+                // Only overwrite if localStorage slot is empty
+                if (!existing.key || existing.key.trim().length === 0) {
+                  existing.key = bk.key;
+                }
+              } else {
+                merged.push({ id: `slot-${Date.now()}-${bk.provider}`, provider: bk.provider as any, key: bk.key });
+              }
+            });
+            localStorage.setItem('zeno_api_key_slots', JSON.stringify(merged));
+            return merged;
+          });
+        }
+      } catch {}
     };
     init();
 
@@ -173,7 +196,8 @@ export default function App() {
 
       setRuns((prev) => [created.run, ...prev]);
       setActiveRunId(created.run.id);
-      setChecklistSteps(created.steps || []);
+      const initialSteps = created.steps || [];
+      setChecklistSteps(initialSteps);
 
       setLiveLogs((prev) => [
         ...prev,
@@ -184,7 +208,86 @@ export default function App() {
         },
         {
           type: 'info',
-          text: `Generated checklist with ${created.steps?.length || 0} verification steps.`,
+          text: `Generated ${initialSteps.length} steps — starting autonomous execution...`,
+          ts: new Date().toLocaleTimeString(),
+        },
+      ]);
+
+      // Auto-execute all steps sequentially
+      let currentSteps = initialSteps;
+      for (let i = 0; i < currentSteps.length; i++) {
+        const step = currentSteps[i];
+        if (step.status === 'completed') continue;
+
+        setLiveLogs((prev) => [
+          ...prev,
+          {
+            type: 'tool',
+            text: `▶ Executing Step ${Number(step.id)}: "${step.title}"...`,
+            ts: new Date().toLocaleTimeString(),
+          },
+        ]);
+
+        // Mark in_progress
+        setChecklistSteps((prev) =>
+          prev.map((s) => (s.id === step.id ? { ...s, status: 'in_progress' } : s))
+        );
+
+        try {
+          const stepRes = await api.agent.executeStep({
+            run_id: created.run.id,
+            step_id: step.id,
+            project_folder: created.run.project_folder,
+            model: activeModel,
+            customApiKey: primaryApiKey,
+          });
+
+          // Refresh checklist from disk
+          const updatedChecklist = await api.agent.getRunChecklist(created.run.project_folder);
+          if (updatedChecklist?.steps?.length > 0) {
+            setChecklistSteps(updatedChecklist.steps);
+            currentSteps = updatedChecklist.steps;
+          } else {
+            setChecklistSteps((prev) =>
+              prev.map((s) =>
+                s.id === step.id ? { ...s, status: 'completed', evidence: stepRes.evidence } : s
+              )
+            );
+          }
+
+          setLiveLogs((prev) => [
+            ...prev,
+            {
+              type: 'info',
+              text: `✓ Step ${step.id} complete.`,
+              ts: new Date().toLocaleTimeString(),
+            },
+          ]);
+        } catch (stepErr: any) {
+          setLiveLogs((prev) => [
+            ...prev,
+            {
+              type: 'error',
+              text: `✗ Step ${step.id} failed: ${stepErr.message}`,
+              ts: new Date().toLocaleTimeString(),
+            },
+          ]);
+          setChecklistSteps((prev) =>
+            prev.map((s) =>
+              s.id === step.id
+                ? { ...s, status: 'failed', retry_count: s.retry_count + 1, error_message: stepErr.message }
+                : s
+            )
+          );
+          // Continue to next step instead of stopping entirely
+        }
+      }
+
+      setLiveLogs((prev) => [
+        ...prev,
+        {
+          type: 'info',
+          text: '🎉 All steps executed! Task complete.',
           ts: new Date().toLocaleTimeString(),
         },
       ]);
@@ -201,6 +304,7 @@ export default function App() {
       setIsExecutingAgent(false);
     }
   };
+
 
   const handleExecuteNextStep = async () => {
     if (!activeRun || isExecutingAgent) return;
@@ -353,6 +457,10 @@ export default function App() {
   const handleSaveApiKeySlots = (slots: ApiKeySlot[]) => {
     setApiKeySlots(slots);
     localStorage.setItem('zeno_api_key_slots', JSON.stringify(slots));
+    // Persist to backend .env so keys survive app restart
+    api.settings.saveApiKeys(
+      slots.map((s) => ({ provider: s.provider, key: s.key }))
+    ).catch(() => {});
   };
 
   const handleSaveWorkspaceDir = (dir: string) => {

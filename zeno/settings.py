@@ -24,8 +24,8 @@ CHATS_METADATA_PATH = BASE_DIR / "chats.json"
 ENV_FILE_PATH = BASE_DIR / ".env"
 MEMORY_FILE_PATH = BASE_DIR / "memory.md"
 
-# Default Model and Thinking Level (modern 3.6+ standard)
-DEFAULT_MODEL = "gemini-3.5-flash-lite"
+# Default Model and Thinking Level
+DEFAULT_MODEL = "gemini-2.5-flash"
 DEFAULT_THINKING_LEVEL = "MEDIUM"  # MINIMAL, LOW, MEDIUM, HIGH
 MAX_OUTPUT_TOKENS = 4096
 MAX_HISTORY_MESSAGES = 10
@@ -61,9 +61,8 @@ APP_ALLOWLIST = ["notepad", "calculator", "code", "chrome", "firefox", "explorer
 # Supported Models grouped strictly by Provider
 PROVIDER_MODELS_MAP: dict[str, list[str]] = {
     "Gemini": [
-        "gemini-3.5-flash-lite",
-        "gemini-3.6-flash",
-        "gemini-3.8-flash",
+        DEFAULT_MODEL,
+        "gemini-2.5-flash-lite",
     ],
     "Anthropic Claude": [
         "claude-3-5-sonnet-20241022",

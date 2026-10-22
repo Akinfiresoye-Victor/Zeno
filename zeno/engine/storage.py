@@ -44,7 +44,7 @@ class AssistantThread:
     messages: list[dict[str, Any]] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     last_activity: float = field(default_factory=time.time)
-    model: str = "gemini-3.5-flash-lite"
+    model: str = "gemini-2.5-flash"
     total_tokens: dict[str, int] = field(default_factory=lambda: {"input": 0, "output": 0})
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,7 +63,7 @@ class AgentRunRecord:
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     messages: list[dict[str, Any]] = field(default_factory=list)
-    model_used: str = "gemini-3.5-flash-lite"
+    model_used: str = "gemini-2.5-flash"
     tokens: dict[str, int] = field(default_factory=lambda: {"input": 0, "output": 0})
     error_summary: Optional[str] = None
     evidence_screenshots: list[str] = field(default_factory=list)

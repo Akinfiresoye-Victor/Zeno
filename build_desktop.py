@@ -37,6 +37,10 @@ def build_executable() -> int:
         return 1
 
     dist_web = BASE_DIR / "dist"
+    if not (dist_web / "index.html").is_file() or not (dist_web / "assets").is_dir():
+        print("[-] Frontend build not found. Run `npm run build` before packaging.")
+        return 1
+
     data_separator = ";" if os_name == "windows" else ":"
 
     cmd = [
@@ -44,19 +48,25 @@ def build_executable() -> int:
         "-m",
         "PyInstaller",
         "--name=Zeno",
+        f"--specpath={BASE_DIR / 'build'}",
         "--noconfirm",
+        "--clean",
         "--onedir",
         "--windowed",
-        f"--add-data={dist_web}{data_separator}dist",
         f"--add-data={ZENO_DIR / 'resources'}{data_separator}zeno/resources",
         "--collect-all=webview",
         "--copy-metadata=pywebview",
         str(main_script),
     ]
+    for frontend_entry in sorted(dist_web.iterdir()):
+        if frontend_entry.is_dir() and frontend_entry.name.lower() == "zeno":
+            continue
+        destination = f"dist/{frontend_entry.name}" if frontend_entry.is_dir() else "dist"
+        cmd.append(f"--add-data={frontend_entry}{data_separator}{destination}")
 
     print(f"[*] Executing command:\n    {' '.join(cmd)}")
     try:
-        result = subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, cwd=BASE_DIR)
         print("\n==========================================")
         print("  Zeno Desktop Executable Build Success! ")
         print("==========================================")

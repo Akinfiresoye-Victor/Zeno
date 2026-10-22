@@ -341,6 +341,17 @@ export const api = {
       if (bridged) return true;
       return false;
     },
+
+    async captureScreenshot(): Promise<{
+      base64: string;
+      name: string;
+      size: string;
+      status: string;
+    } | null> {
+      const bridged = await callBridge('capture_screen', { target: 'all' });
+      if (bridged && bridged.base64) return bridged;
+      return null;
+    },
   },
 
   // --------------------------------------------------------------------------
@@ -495,6 +506,32 @@ export const api = {
       localStorage.setItem('zeno_permissions', JSON.stringify(permissions));
       if (bridged) return true;
       return true;
+    },
+
+    async saveApiKeys(slots: { provider: string; key: string }[]): Promise<boolean> {
+      const bridged = await callBridge('save_settings', { apiKeySlots: slots });
+      if (bridged !== null) return true;
+      // Fallback to Express backend
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKeySlots: slots }),
+      }).catch(() => null);
+      return res ? res.ok : false;
+    },
+
+    async loadApiKeys(): Promise<{ provider: string; key: string }[] | null> {
+      const bridged = await callBridge('get_settings');
+      if (bridged && bridged.keys) {
+        const slots: { provider: string; key: string }[] = [];
+        for (const [provider, key] of Object.entries(bridged.keys)) {
+          if (typeof key === 'string' && key.trim()) {
+            slots.push({ provider, key: key as string });
+          }
+        }
+        return slots.length > 0 ? slots : null;
+      }
+      return null;
     },
   },
 

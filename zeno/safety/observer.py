@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 from zeno.safety.command_guard import parse_and_validate_command
 from zeno.safety.database import record_observer_dialogue
 from zeno.safety.path_validator import validate_approved_path
-from zeno.settings import ENV_FILE_PATH
+from zeno.settings import DEFAULT_MODEL, ENV_FILE_PATH
 
 # High-risk destructive signature patterns that must be blocked immediately
 DANGEROUS_PATTERNS = [
@@ -55,7 +55,7 @@ for that grade. NEVER compress a Grade B task into 4 steps to take shortcuts.
 
 def plan_task_with_observer(
     task_description: str,
-    model: str = "gemini-3.5-flash-lite",
+    model: str = DEFAULT_MODEL,
     api_key: str = "",
     custom_api_key: str = "",
 ) -> dict[str, Any]:
@@ -369,4 +369,3 @@ def get_recent_dialogues(limit: int = 15) -> list[dict[str, Any]]:
     """Retrieve recent safety dialogues from database."""
     from zeno.safety.database import get_recent_observer_dialogues
     return get_recent_observer_dialogues(limit=limit)
-

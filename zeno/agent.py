@@ -31,6 +31,7 @@ logging.getLogger("google.genai.models").setLevel(logging.ERROR)
 
 from zeno.audit import log_tool_action
 from zeno.i18n import t
+from zeno.gemini_models import list_supported_gemini_models
 from zeno.permissions import (
     get_category_description,
     request_permission_if_needed,
@@ -210,14 +211,57 @@ class ZenoAgent:
 
         client = genai.Client(api_key=api_key)
 
-        contents = []
+        # Build contents with strict alternation enforcement.
+        # Gemini SDK requires: alternating user/model turns, no consecutive same-role,
+        # must start with user turn, must end with user turn.
+        raw_contents = []
         for msg in messages_history:
-            contents.append(
-                types.Content(
-                    role="user" if msg["role"] == "user" else "model",
-                    parts=[types.Part.from_text(text=str(msg["content"]))],
-                )
+            role = "user" if msg.get("role", "user") == "user" else "model"
+            content_text = str(msg.get("content", "")).strip()
+            if content_text:
+                raw_contents.append((role, content_text))
+
+        # Merge consecutive same-role messages
+        merged: list[tuple[str, str]] = []
+        for role, text in raw_contents:
+            if merged and merged[-1][0] == role:
+                merged[-1] = (role, merged[-1][1] + "\n" + text)
+            else:
+                merged.append([role, text])
+
+        # Ensure starts with user
+        if merged and merged[0][0] == "model":
+            merged.pop(0)
+
+        # Ensure ends with user (the latest user prompt should be last)
+        # Remove trailing model turn if present
+        if merged and merged[-1][0] == "model":
+            merged.pop()
+
+        # If the last message is already the original_user_prompt, keep it.
+        # Otherwise ensure it's appended.
+        if not merged or merged[-1][1] != original_user_prompt:
+            # Remove any trailing user entry (it'll be replaced by original_user_prompt)
+            if merged and merged[-1][0] == "user":
+                merged.pop()
+            merged.append(["user", original_user_prompt])
+
+        contents = [
+            types.Content(
+                role=role,
+                parts=[types.Part.from_text(text=text)],
             )
+            for role, text in merged
+        ]
+
+        # Safety: ensure contents is never empty
+        if not contents:
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=original_user_prompt)],
+                )
+            ]
 
         step_count = 0
         total_input_tokens = 0
@@ -277,29 +321,37 @@ class ZenoAgent:
                 automatic_function_calling=afc_config or {"disable": True},
             )
 
-            # Try model candidates in case the requested model is 503 UNAVAILABLE or 404
             gemini_candidates = [model_name]
-            if model_name == "gemini-3.8-flash":
-                gemini_candidates = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-            elif model_name == "gemini-3.6-flash":
-                gemini_candidates = ["gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-            elif model_name == "gemini-3.5-flash-lite":
-                gemini_candidates = ["gemini-3.5-flash-lite", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
-
             response = None
             last_sdk_exc = None
-            for c_model in gemini_candidates:
+            candidate_index = 0
+            while candidate_index < len(gemini_candidates):
+                c_model = gemini_candidates[candidate_index]
+                candidate_index += 1
                 try:
                     response = client.models.generate_content(
                         model=c_model,
                         contents=contents,
                         config=config,
                     )
+                    model_name = c_model
                     break
                 except Exception as sdk_err:
                     last_sdk_exc = sdk_err
                     err_lower = str(sdk_err).lower()
                     if any(x in err_lower for x in ["503", "unavailable", "high demand", "404", "not found", "overloaded", "429"]):
+                        if not gemini_candidates[1:]:
+                            try:
+                                supported_models = list_supported_gemini_models(client)
+                            except Exception as list_exc:
+                                logging.warning("Unable to list Gemini models for fallback: %s", list_exc)
+                                supported_models = []
+                            for fallback_model in supported_models + [
+                                "gemini-2.5-flash",
+                                "gemini-2.5-flash-lite",
+                            ]:
+                                if fallback_model not in gemini_candidates:
+                                    gemini_candidates.append(fallback_model)
                         continue
                     raise sdk_err
 

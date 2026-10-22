@@ -32,7 +32,7 @@ from zeno.engine.workspace import ProjectWorkspace, generate_creative_folder_nam
 from zeno.memory import load_memory, save_memory, clear_memory, synthesize_memory_with_ai
 from zeno.safety.observer import plan_task_with_observer
 from zeno.safety.rules import OrchidSecurityKernel
-from zeno.settings import DEFAULT_WORKSPACE_DIR, ENV_FILE_PATH, MEMORY_FILE_PATH, SCREENSHOTS_DIR
+from zeno.settings import DEFAULT_MODEL, DEFAULT_WORKSPACE_DIR, ENV_FILE_PATH, MEMORY_FILE_PATH, SCREENSHOTS_DIR
 from zeno.tools.file_tools import get_active_project_dir, set_active_project_dir
 
 logger = logging.getLogger("zeno.api_handlers")
@@ -77,7 +77,7 @@ class ZenoEngineHandlers:
         initializes .venv, writes checklist.json, and enqueues the run.
         """
         task = payload.get("task") or payload.get("message", "")
-        model = payload.get("model", "gemini-3.5-flash-lite")
+        model = payload.get("model", DEFAULT_MODEL)
         custom_key = payload.get("customApiKey", "")
         project_name = payload.get("projectName")
 
@@ -175,7 +175,7 @@ class ZenoEngineHandlers:
         run_id = payload.get("run_id", "")
         step_id = payload.get("step_id", "")
         project_folder = payload.get("project_folder", "")
-        model = payload.get("model", "gemini-3.5-flash-lite")
+        model = payload.get("model", DEFAULT_MODEL)
         custom_key = payload.get("customApiKey", "")
         history = payload.get("history", [])
 
